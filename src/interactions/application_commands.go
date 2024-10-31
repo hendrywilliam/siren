@@ -57,8 +57,14 @@ func RegisterCommands() {
 	if len(botToken) == 0 {
 		log.Fatal(fmt.Errorf("no bot token provided"))
 	}
-	dcAppVersion := os.Getenv("DC_APPS_VERSION")
+	dcAppVersion, ok := os.LookupEnv("DC_API_VERSION")
+	if !ok || len(dcAppVersion) == 0 {
+		log.Fatal(fmt.Errorf("dc_api_version is not provided"))
+	}
 	dcApplicationId := os.Getenv("DC_APPLICATION_ID")
+	if !ok || len(dcApplicationId) == 0 {
+		log.Fatal(fmt.Errorf("dc_application_id is not provided"))
+	}
 	endpoint := fmt.Sprintf("https://discord.com/api/%s/applications/%s/commands", dcAppVersion, dcApplicationId)
 	commands := []AppCmd{
 		{

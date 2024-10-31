@@ -36,6 +36,7 @@ type Interaction struct {
 	GuildID                      string                            `json:"guild_id,omitempty"`
 	Token                        string                            `json:"token"`
 	Version                      uint                              `json:"version"`
+	Context                      InteractionContextType            `json:"context,omitempty"`
 	Guild                        interface{}                       `json:"guild,omitempty"`                          // unimplemented.
 	Channel                      interface{}                       `json:"channel,omitempty"`                        // unimplemented.
 	Member                       interface{}                       `json:"member,omitempty"`                         // unimplemented.
@@ -46,5 +47,4 @@ type Interaction struct {
 	GuildLocale                  string                            `json:"guild_locale,omitempty"`                   // unimplemented.
 	Entitlements                 []interface{}                     `json:"entitlements,omitempty"`                   // unimplemented.
 	AuthorizingIntegrationOwners interface{}                       `json:"authorizing_integration_owners,omitempty"` // unimplemented.
-	Context                      InteractionContextType            `json:"context,omitempty"`
 }

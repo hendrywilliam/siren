@@ -7,9 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/gofiber/fiber/v3/log"
 	"github.com/joho/godotenv"
-	"github.com/lyrical/server"
+	"github.com/lyrical/gateway"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var signals = []os.Signal{
@@ -19,14 +20,20 @@ var signals = []os.Signal{
 }
 
 func main() {
-	err := godotenv.Load("./.env")
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	err := godotenv.Load()
 	if err != nil {
-		log.Panic("failed to load config file")
+		panic("failed to load config file")
 	}
 	// interactions.RegisterCommands()
 	ctx, stop := signal.NotifyContext(context.Background(), signals...)
 	defer stop()
-	server := server.NewServer()
-	addrs := os.Getenv("API_ADDRESS")
-	server.StartServer(ctx, addrs)
+	// server := server.NewServer()
+	addrs, ok := os.LookupEnv("API_ADDRESS")
+	if !ok || len(addrs) == 0 {
+		panic("api_address is not provided")
+	}
+	// go server.StartServer(ctx, addrs)
+	go gateway.StartGateway(ctx)
+	<-ctx.Done()
 }
