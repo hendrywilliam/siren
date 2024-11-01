@@ -1,4 +1,4 @@
-module github.com/lyrical
+module github.com/siren
 
 go 1.23.2
 

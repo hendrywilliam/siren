@@ -1,6 +1,6 @@
 package interactions
 
-type InteractionType = uint
+type InteractionType = uint8
 
 const (
 	InteractionTypePing                           InteractionType = 1
@@ -10,7 +10,7 @@ const (
 	InteractionTypeModalSubmit                    InteractionType = 5
 )
 
-type InteractionContextType = uint
+type InteractionContextType = uint8
 
 const (
 	InteractionContextTypeGuild InteractionContextType = 0
@@ -39,7 +39,7 @@ type Interaction struct {
 	Context                      InteractionContextType            `json:"context,omitempty"`
 	Guild                        interface{}                       `json:"guild,omitempty"`                          // unimplemented.
 	Channel                      interface{}                       `json:"channel,omitempty"`                        // unimplemented.
-	Member                       interface{}                       `json:"member,omitempty"`                         // unimplemented.
+	Member                       struct{}                          `json:"member,omitempty"`                         // unimplemented.
 	User                         interface{}                       `json:"user,omitempty"`                           // unimplemented.
 	Message                      interface{}                       `json:"message,omitempty"`                        // unimplemented.
 	AppPermissions               string                            `json:"app_permissions,omitempty"`                // unimplemented.

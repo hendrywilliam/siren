@@ -8,9 +8,9 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
-	"github.com/lyrical/gateway"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/siren/gateway"
 )
 
 var signals = []os.Signal{

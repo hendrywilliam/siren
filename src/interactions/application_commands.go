@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3/log"
 )
 
-type AppCmdType uint
+type AppCmdType = uint8
 
 const (
 	AppCmdTypeChatInput  AppCmdType = 1
@@ -21,14 +21,14 @@ const (
 	AppPrimaryEntryPoint AppCmdType = 4
 )
 
-type AppCmdIntegrationType = uint
+type AppCmdIntegrationType = uint8
 
 const (
 	AppIntegrationTypeGuildInstall AppCmdIntegrationType = 0
 	AppIntegrationTypeUserInstall  AppCmdIntegrationType = 1
 )
 
-type AppCmdInteractionCtxType = uint
+type AppCmdInteractionCtxType = uint8
 
 const (
 	AppInteractionContextTypeGuild          AppCmdInteractionCtxType = 0
@@ -71,8 +71,8 @@ func RegisterCommands() {
 			Name:             "test",
 			Description:      "test command",
 			Type:             AppCmdTypeChatInput,
-			IntegrationTypes: []uint{AppIntegrationTypeGuildInstall, AppIntegrationTypeUserInstall},
-			Contexts:         []uint{AppInteractionContextTypeGuild, AppInteractionContextTypePrivateChannel, AppInteractionContextTypeBotDM},
+			IntegrationTypes: []uint8{AppIntegrationTypeGuildInstall, AppIntegrationTypeUserInstall},
+			Contexts:         []uint8{AppInteractionContextTypeGuild, AppInteractionContextTypePrivateChannel, AppInteractionContextTypeBotDM},
 		},
 	}
 	rb, err := json.Marshal(commands)

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/lyrical/interactions"
+	"github.com/siren/interactions"
 )
 
 func (server *Server) PingRequestMiddleware(c fiber.Ctx) error {

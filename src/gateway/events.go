@@ -1,31 +1,44 @@
 package gateway
 
-type EventOpcode = uint64
+type EventName = string
+
+const (
+	InteractionCreate EventName = "INTERACT"
+)
+
+type EventOpcode = uint8
 
 type Event struct {
 	Op EventOpcode `json:"op"`
 	D  interface{} `json:"d,omitempty"`
 	S  uint64      `json:"s,omitempty"`
-	T  string      `json:"t,omitempty"`
+	T  EventName   `json:"t,omitempty"`
 }
 
-type SendOpcode = uint64
+type GatewayOpcode = uint8
 
 const (
-	HeartbeatSendOpcode               SendOpcode = 1
-	IdentifySendOpcode                SendOpcode = 2
-	PresenceUpdateSendOpcode          SendOpcode = 3
-	VoiceStateSendOpcode              SendOpcode = 4
-	ResumeSendOpcode                  SendOpcode = 6
-	RequestGuildMembersSendOpcode     SendOpcode = 8
-	RequestSoundboardSoundsSendOpcode SendOpcode = 31
+	GatewayOpcodeDispatch                GatewayOpcode = 0
+	GatewayOpcodeHeartbeat               GatewayOpcode = 1
+	GatewayOpcodeIdentify                GatewayOpcode = 2
+	GatewayOpcodePresenceUpdate          GatewayOpcode = 3
+	GatewayOpcodeVoiceStateUpdate        GatewayOpcode = 4
+	GatewayOpcodeResume                  GatewayOpcode = 6
+	GatewayOpcodeReconnect               GatewayOpcode = 7
+	GatewayOpcodeRequestGuildMember      GatewayOpcode = 8
+	GatewayOpcodeInvalidSession          GatewayOpcode = 9
+	GatewayOpcodeHello                   GatewayOpcode = 10
+	GatewayOpcodeHeartbeatAck            GatewayOpcode = 11
+	GatewayOpcodeRequestSoundboardSounds GatewayOpcode = 31
 )
+
+type HelloEventD struct {
+	HeartbeatInterval uint64 `json:"heartbeat_interval"`
+}
 
 type HelloEvent struct {
 	Op EventOpcode `json:"op"`
-	D  struct {
-		HeartbeatInterval uint `json:"heartbeat_interval"`
-	} `json:"d"`
+	D  HelloEventD `json:"d"`
 }
 
 type IdentifyEventDProperties struct {
