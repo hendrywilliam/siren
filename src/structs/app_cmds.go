@@ -1,4 +1,4 @@
-package interactions
+package structs
 
 import (
 	"bytes"

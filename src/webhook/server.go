@@ -1,4 +1,4 @@
-package server
+package webhook
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/siren/interactions"
+	"github.com/siren/src/structs"
 )
 
 type Server struct {
@@ -26,16 +26,16 @@ func (server *Server) setupRouter() {
 	router.Use("/", server.VerifyKeyMiddleware)
 	router.Use("/", server.PingRequestMiddleware)
 	router.Post("/interactions", func(c fiber.Ctx) error {
-		req := new(interactions.Interaction)
+		req := new(structs.Interaction)
 		if err := c.Bind().JSON(req); err != nil {
 			log.Error(err)
 			return c.Status(http.StatusInternalServerError).SendString("internal server error")
 		}
-		if req.Type == interactions.InteractionTypeApplicationCommand {
+		if req.Type == structs.InteractionTypeApplicationCommand {
 			if req.Data.Name == "test" {
-				return c.JSON(interactions.InteractionResponse{
-					Type: interactions.InteractionResponseTypeChannelMessageWithSource,
-					Data: interactions.InteractionResponseDataMessage{
+				return c.JSON(structs.InteractionResponse{
+					Type: structs.InteractionResponseTypeChannelMessageWithSource,
+					Data: structs.InteractionResponseDataMessage{
 						Content: "hello world",
 					},
 				})

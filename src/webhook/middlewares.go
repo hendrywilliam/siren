@@ -1,4 +1,4 @@
-package server
+package webhook
 
 import (
 	"bytes"
@@ -7,17 +7,17 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/siren/interactions"
+	"github.com/siren/src/structs"
 )
 
 func (server *Server) PingRequestMiddleware(c fiber.Ctx) error {
-	i := new(interactions.Interaction)
+	i := new(structs.Interaction)
 	if err := c.Bind().JSON(i); err != nil {
 		return err
 	}
-	if i.Type == interactions.InteractionTypePing {
-		return c.JSON(interactions.InteractionResponse{
-			Type: interactions.InteractionResponseTypePong,
+	if i.Type == structs.InteractionTypePing {
+		return c.JSON(structs.InteractionResponse{
+			Type: structs.InteractionResponseTypePong,
 		})
 	}
 	return c.Next()

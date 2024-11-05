@@ -8,9 +8,7 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-	"github.com/siren/gateway"
+	"github.com/siren/src/gateway"
 )
 
 var signals = []os.Signal{
@@ -20,7 +18,6 @@ var signals = []os.Signal{
 }
 
 func main() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	err := godotenv.Load()
 	if err != nil {
 		panic("failed to load config file")
