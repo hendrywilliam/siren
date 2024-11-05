@@ -8,7 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/siren/src/structs"
+	"github.com/hendrywilliam/siren/src/structs"
 )
 
 type Server struct {

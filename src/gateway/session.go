@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/siren/src/structs"
+	"github.com/hendrywilliam/siren/src/structs"
 )
 
 type Session struct {

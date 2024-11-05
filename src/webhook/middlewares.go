@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/siren/src/structs"
+	"github.com/hendrywilliam/siren/src/structs"
 )
 
 func (server *Server) PingRequestMiddleware(c fiber.Ctx) error {

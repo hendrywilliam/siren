@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/hendrywilliam/siren/src/gateway"
 	"github.com/joho/godotenv"
-	"github.com/siren/src/gateway"
 )
 
 var signals = []os.Signal{
