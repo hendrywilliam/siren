@@ -45,15 +45,9 @@ type IdentifyEventDProperties struct {
 	Device  string `json:"device"`
 }
 
-type IdentifyEventD struct {
-	Token      string                   `json:"token"`
-	Intents    uint64                   `json:"intents"`
-	Properties IdentifyEventDProperties `json:"properties"`
-}
-
 type IdentifyEvent struct {
-	Op EventOpcode    `json:"op"`
-	D  IdentifyEventD `json:"d"`
+	Op EventOpcode `json:"op"`
+	// D  IdentifyEventData `json:"d"`
 }
 
 type ResumeEvent struct {
@@ -75,14 +69,14 @@ type UpdateVoiceState struct {
 }
 
 // Receive events.
-type HelloEventD struct {
+type HelloEvent struct {
 	HeartbeatInterval uint64 `json:"heartbeat_interval"`
 }
 
-type HelloEvent struct {
-	Op EventOpcode `json:"op"`
-	D  HelloEventD `json:"d"`
-}
+// type HelloEvent struct {
+// 	Op EventOpcode `json:"op"`
+// 	D  HelloEventD `json:"d"`
+// }
 
 type ReadyEventD struct {
 	V                uint8       `json:"v"`
