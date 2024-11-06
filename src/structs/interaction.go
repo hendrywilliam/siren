@@ -22,10 +22,10 @@ type InteractionApplicationCommandData struct {
 	ID       string      `json:"id"`
 	Name     string      `json:"name"`
 	Type     uint        `json:"type"`
-	Resolved interface{} `json:"resolved,omitempty"`  // unimplemented.
-	Options  interface{} `json:"options,omitempty"`   // unimplemented.
-	GuildID  string      `json:"guild_id,omitempty"`  // unimplemented.
-	TargetID string      `json:"target_id,omitempty"` // unimplemented.
+	Resolved interface{} `json:"resolved,omitempty"`
+	Options  interface{} `json:"options,omitempty"`
+	GuildID  string      `json:"guild_id,omitempty"`
+	TargetID string      `json:"target_id,omitempty"`
 }
 
 type Interaction struct {
@@ -37,16 +37,16 @@ type Interaction struct {
 	Token                        string                            `json:"token"`
 	Version                      uint                              `json:"version"`
 	Context                      InteractionContextType            `json:"context,omitempty"`
-	Guild                        interface{}                       `json:"guild,omitempty"`                          // unimplemented.
-	Channel                      interface{}                       `json:"channel,omitempty"`                        // unimplemented.
-	Member                       struct{}                          `json:"member,omitempty"`                         // unimplemented.
-	User                         interface{}                       `json:"user,omitempty"`                           // unimplemented.
-	Message                      interface{}                       `json:"message,omitempty"`                        // unimplemented.
-	AppPermissions               string                            `json:"app_permissions,omitempty"`                // unimplemented.
-	Locale                       string                            `json:"locale,omitempty"`                         // unimplemented.
-	GuildLocale                  string                            `json:"guild_locale,omitempty"`                   // unimplemented.
-	Entitlements                 []interface{}                     `json:"entitlements,omitempty"`                   // unimplemented.
-	AuthorizingIntegrationOwners interface{}                       `json:"authorizing_integration_owners,omitempty"` // unimplemented.
+	Guild                        interface{}                       `json:"guild,omitempty"`
+	Channel                      interface{}                       `json:"channel,omitempty"`
+	Member                       Member                            `json:"member,omitempty"`
+	User                         User                              `json:"user,omitempty"`
+	Message                      interface{}                       `json:"message,omitempty"`
+	AppPermissions               string                            `json:"app_permissions,omitempty"`
+	Locale                       string                            `json:"locale,omitempty"`
+	GuildLocale                  string                            `json:"guild_locale,omitempty"`
+	Entitlements                 []interface{}                     `json:"entitlements,omitempty"`
+	AuthorizingIntegrationOwners interface{}                       `json:"authorizing_integration_owners,omitempty"`
 }
 
 type InteractionResponseType = uint

@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/hendrywilliam/siren/src/gateway"
+	"github.com/hendrywilliam/siren/src"
 	"github.com/joho/godotenv"
 )
 
@@ -22,15 +21,12 @@ func main() {
 	if err != nil {
 		panic("failed to load config file")
 	}
-	// interactions.RegisterCommands()
 	ctx, stop := signal.NotifyContext(context.Background(), signals...)
 	defer stop()
-	// server := server.NewServer()
-	addrs, ok := os.LookupEnv("API_ADDRESS")
-	if !ok || len(addrs) == 0 {
-		panic("api_address is not provided")
+	g := src.NewGateway(ctx)
+	err = g.Open()
+	if err != nil {
+		stop()
 	}
-	// go server.StartServer(ctx, addrs)
-	go gateway.StartGateway(ctx)
 	<-ctx.Done()
 }
