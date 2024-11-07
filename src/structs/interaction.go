@@ -1,5 +1,7 @@
 package structs
 
+import "time"
+
 type InteractionType = uint8
 
 const (
@@ -28,6 +30,62 @@ type InteractionApplicationCommandData struct {
 	TargetID string      `json:"target_id,omitempty"`
 }
 
+type ChannelType = uint8
+
+const (
+	ChannelTypeGuildText          ChannelType = 0
+	ChannelTypeDM                 ChannelType = 1
+	ChannelTypeGuildVoice         ChannelType = 2
+	ChannelTypeGroupDM            ChannelType = 3
+	ChannelTypeGuildCategory      ChannelType = 4
+	ChannelTypeGuildAnnouncement  ChannelType = 5
+	ChannelTypeAnnouncementThread ChannelType = 10
+	ChannelTypePublicThread       ChannelType = 11
+	ChannelTypePrivateThread      ChannelType = 12
+	ChannelTypeGuildStageVoice    ChannelType = 13
+	ChannelTypeGuildDirectory     ChannelType = 14
+	ChannelTypeGuildForum         ChannelType = 15
+	ChannelTypeGuildMedia         ChannelType = 16
+)
+
+type Channel struct {
+	ID                            string        `json:"id"`
+	Type                          ChannelType   `json:"type"`
+	GuildID                       string        `json:"guild_id"`
+	Position                      uint          `json:"position,omitempty"`
+	PermissionOverwrites          []interface{} `json:"permission_overwrites,omitempty"`
+	Name                          string        `json:"name,omitempty"`
+	Topic                         string        `json:"topic,omitempty"`
+	Nsfw                          bool          `json:"nsfw,omitempty"`
+	LastMessageID                 string        `json:"last_message_id,omitempty"`
+	Bitrate                       uint          `json:"bitrate,omitempty"`
+	UserLimit                     uint          `json:"user_limit,omitempty"`
+	RateLimitPerUser              uint          `json:"rate_limit_per_user,omitempty"`
+	Recipients                    []interface{} `json:"recipients,omitempty"`
+	Icon                          string        `json:"icon,omitempty"`
+	OwnerID                       string        `json:"owner_id,omitempty"`
+	ApplicationID                 string        `json:"application_id,omitempty"`
+	Managed                       bool          `json:"managed,omitempty"`
+	ParentID                      string        `json:"parent_id,omitempty"`
+	LastPinTimestamp              time.Time     `json:"last_pin_timestamp,omitempty"`
+	RTCRegion                     string        `json:"rtc_region,omitempty"`
+	VideoQualityMode              uint          `json:"video_quality_mode,omitempty"`
+	MessageCount                  uint          `json:"message_count,omitempty"`
+	MemberCount                   uint          `json:"member_count,omitempty"`
+	ThreadMetadata                interface{}   `json:"thread_metadata,omitempty"`
+	Member                        interface{}   `json:"member,omitempty"`
+	DefaultAutoArchiveDuration    uint          `json:"default_auto_archive_duration,omitempty"`
+	Permissions                   string        `json:"permissions,omitempty"`
+	Flags                         uint          `json:"flags,omitempty"`
+	TotalMessageSent              uint          `json:"total_message_sent,omitempty"`
+	AvailableTags                 []interface{} `json:"available_tags,omitempty"`
+	AppliedTags                   []string      `json:"applied_tags,omitempty"`
+	DefaultReactionEmoji          interface{}   `json:"default_reaction_emoji,omitempty"`
+	DefaultThreadRateLimitPerUser uint          `json:"default_thread_rate_limit_per_user,omitempty"`
+	DefaultSortOrder              uint          `json:"default_sort_oder,omitempty"`
+	DefaultForumLayout            uint          `json:"default_forum_layout,omitempty"`
+}
+
 type Interaction struct {
 	ID                           string                            `json:"id"`
 	ApplicationID                string                            `json:"application_id"`
@@ -38,8 +96,8 @@ type Interaction struct {
 	Version                      uint                              `json:"version"`
 	Context                      InteractionContextType            `json:"context,omitempty"`
 	Guild                        interface{}                       `json:"guild,omitempty"`
-	Channel                      interface{}                       `json:"channel,omitempty"`
-	Member                       Member                            `json:"member,omitempty"`
+	Channel                      *Channel                          `json:"channel,omitempty"`
+	Member                       *Member                           `json:"member,omitempty"`
 	User                         User                              `json:"user,omitempty"`
 	Message                      interface{}                       `json:"message,omitempty"`
 	AppPermissions               string                            `json:"app_permissions,omitempty"`

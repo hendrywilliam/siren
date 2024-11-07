@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -37,40 +38,51 @@ type Gateway struct {
 	HTTPClient               *http.Client
 	ctx                      context.Context
 	heartbeatTicker          *time.Ticker
-	BotToken                 string
-	BotIntents               uint64
-	BotVersion               int
 	Resumeable               bool
 	GatewayStatus
-}
 
-const DISCORD_API_VERSION = 10
-const BOT_INTENTS = 641
+	// Default Gateway state.
+	BotToken       string
+	BotIntents     uint64
+	BotVersion     string
+	DiscordBaseURL string
+
+	// Voice Gateway state.
+}
 
 func NewGateway() *Gateway {
 	botToken := os.Getenv("DC_BOT_TOKEN")
 	if len(botToken) == 0 {
 		panic("provide dc_bot_token")
 	}
+	ver := os.Getenv("DC_VOICE_GATEWAY_VERSION")
+	if len(ver) == 0 {
+		panic("provide DC_VOICE_VERSION")
+	}
+	baseUrl := os.Getenv("DC_HTTP_BASE_URL")
+	if len(baseUrl) == 0 {
+		panic("provide DC_HTTP_BASE_URL")
+	}
 	u := url.URL{
 		Scheme:   "wss",
 		Host:     "gateway.discord.gg",
-		RawQuery: fmt.Sprintf("v=%v&encoding=json", DISCORD_API_VERSION),
+		RawQuery: fmt.Sprintf("v=%v&encoding=json", ver),
 	}
 	return &Gateway{
-		HTTPClient:    http.DefaultClient,
-		WSDialer:      websocket.DefaultDialer,
-		WSUrl:         u.String(),
-		BotToken:      botToken,
-		BotIntents:    641,
-		BotVersion:    DISCORD_API_VERSION,
-		Resumeable:    false,
-		GatewayStatus: GatewayStatusWaitingToIdentify,
+		HTTPClient:     http.DefaultClient,
+		WSDialer:       websocket.DefaultDialer,
+		WSUrl:          u.String(),
+		BotToken:       botToken,
+		BotIntents:     641,
+		BotVersion:     ver,
+		Resumeable:     false,
+		GatewayStatus:  GatewayStatusDisconnected,
+		DiscordBaseURL: baseUrl,
 	}
 }
 
 func (g *Gateway) Open(ctx context.Context) error {
-	log.Println("Attempting to connect to discord.")
+	log.Println("Attempting to connect to Discord.")
 	var err error
 	g.ctx = ctx
 	g.WSConn, _, err = g.WSDialer.DialContext(g.ctx, g.WSUrl, nil)
@@ -83,7 +95,6 @@ func (g *Gateway) Open(ctx context.Context) error {
 	return nil
 }
 
-// listen to inbound event.
 func (g *Gateway) listen(conn *websocket.Conn) {
 	for {
 		select {
@@ -111,12 +122,17 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 			case GatewayOpcodeDispatch:
 				switch d := event.D.(type) {
 				case structs.Interaction:
-					interaction := new(structs.InteractionResponse)
-					interaction.Type = structs.InteractionResponseTypeChannelMessageWithSource
-					interaction.Data = structs.InteractionResponseDataMessage{
-						Content: "hello",
+					switch d.Data.Name {
+					case structs.CommandPlay:
+						go g.handlePlayCmd(&d)
+					default:
+						interaction := new(structs.InteractionResponse)
+						interaction.Type = structs.InteractionResponseTypeChannelMessageWithSource
+						interaction.Data = structs.InteractionResponseDataMessage{
+							Content: "hello",
+						}
+						go g.sendCallback(d.Token, d.ID, interaction)
 					}
-					go g.sendCallback(d.Token, d.ID, interaction)
 				case structs.ReadyEventData:
 					g.ResumeGatewayURL = d.ResumeGatewayURL
 					g.SessionID = d.SessionID
@@ -128,6 +144,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				if d, ok := event.D.(HelloEventData); ok {
 					g.LastHeartbeatAcknowledge = g.getLocalTime()
 					g.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
+					g.GatewayStatus = GatewayStatusWaitingToIdentify
 					// dc may send heartbeat, we need to send heartbeat back immediately.
 					if g.GatewayStatus == GatewayStatusReady {
 						_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
@@ -152,6 +169,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				}
 			case GatewayOpcodeHeartbeatAck:
 				g.LastHeartbeatAcknowledge = g.getLocalTime()
+				log.Println("Heartbeat acknowledged.")
 			case GatewayOpcodeReconnect:
 				if g.Resumeable {
 					g.reconnect()
@@ -162,7 +180,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 }
 
 func (g *Gateway) reconnect() {
-	g.Open(g.ctx)
+	_ = g.Open(g.ctx)
 	return
 }
 
@@ -248,20 +266,17 @@ func (g *Gateway) parseEvent(data []byte) (GatewayEvent, error) {
 	return event, nil
 }
 
-// send interaction callback over http.
 func (g *Gateway) sendCallback(interactionToken string, interactionId string, data *structs.InteractionResponse) {
 	rb, _ := json.Marshal(data)
-	request, _ := http.NewRequestWithContext(
-		g.ctx,
+	ctx, cancel := context.WithTimeout(g.ctx, 3*time.Second)
+	defer cancel()
+	response, _ := g.sendHTTPRequest(ctx,
 		http.MethodPost,
 		fmt.Sprintf("https://discord.com/api/v%v/interactions/%s/%s/callback",
 			g.BotVersion,
 			interactionId,
 			interactionToken),
-		bytes.NewBuffer(rb),
-	)
-	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	response, _ := g.HTTPClient.Do(request)
+		bytes.NewBuffer(rb))
 	if response.StatusCode == http.StatusNoContent {
 		log.Println("Interaction callback sent.")
 	} else {
@@ -276,4 +291,59 @@ func (g *Gateway) printPrettyJson(data any) {
 		return
 	}
 	log.Printf("\n%s\n", string(prettyJson))
+}
+
+func (g *Gateway) mentionUser(userId string) string {
+	return fmt.Sprintf("<@%s>", userId)
+}
+
+func (g *Gateway) sendHTTPRequest(ctx context.Context, httpMethod string, url string, body io.Reader) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, httpMethod, url, body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	request.Header.Set("Authorization", fmt.Sprintf("Bot %s", g.BotToken))
+	request.Header.Set("User-Agent", "DiscordBot")
+	response, err := g.HTTPClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (g *Gateway) handlePlayCmd(interaction *structs.Interaction) {
+	i := new(structs.InteractionResponse)
+	i.Type = structs.InteractionResponseTypeChannelMessageWithSource
+
+	response, err := g.sendHTTPRequest(g.ctx,
+		http.MethodGet,
+		fmt.Sprintf("%s/v%s/guilds/%s/voice-states/%s", g.DiscordBaseURL, g.BotVersion, interaction.GuildID, interaction.Member.User.ID),
+		nil)
+	if err != nil {
+		i.Data = structs.InteractionResponseDataMessage{
+			Content: "Failed to get current voice state.",
+		}
+		g.sendCallback(interaction.Token, interaction.ID, i)
+		return
+	}
+	if response.StatusCode == http.StatusNotFound {
+		i.Data = structs.InteractionResponseDataMessage{
+			Content: fmt.Sprintf("%s, you are not connected to a voice channel. Please join a voice channel first to start using this feature.",
+				g.mentionUser(interaction.Member.User.ID)),
+		}
+		g.sendCallback(interaction.Token, interaction.ID, i)
+		return
+	}
+	defer response.Body.Close()
+	b, _ := io.ReadAll(response.Body)
+	voiceState := new(structs.VoiceState)
+	_ = json.Unmarshal(b, voiceState)
+	data := &GatewayVoiceState{
+		GuildID:   interaction.GuildID,
+		ChannelID: voiceState.ChannelID,
+		SelfMute:  true,
+		SelfDeaf:  false,
+	}
+	g.sendEvent(websocket.TextMessage, GatewayOpcodeVoiceStateUpdate, data)
 }
