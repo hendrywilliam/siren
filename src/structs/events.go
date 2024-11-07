@@ -45,11 +45,6 @@ type IdentifyEventDProperties struct {
 	Device  string `json:"device"`
 }
 
-type IdentifyEvent struct {
-	Op EventOpcode `json:"op"`
-	// D  IdentifyEventData `json:"d"`
-}
-
 type ResumeEvent struct {
 	Token     string `json:"token"`
 	SessionID string `json:"session_id"`
@@ -73,12 +68,14 @@ type HelloEvent struct {
 	HeartbeatInterval uint64 `json:"heartbeat_interval"`
 }
 
-// type HelloEvent struct {
-// 	Op EventOpcode `json:"op"`
-// 	D  HelloEventD `json:"d"`
-// }
+type ReadyEvent struct {
+	T  EventName      `json:"t"`
+	S  uint64         `json:"s"`
+	Op EventOpcode    `json:"op"`
+	D  ReadyEventData `json:"d"`
+}
 
-type ReadyEventD struct {
+type ReadyEventData struct {
 	V                uint8       `json:"v"`
 	User             interface{} `json:"user"`
 	Guilds           interface{} `json:"guilds"`
@@ -86,11 +83,4 @@ type ReadyEventD struct {
 	ResumeGatewayURL string      `json:"resume_gateway_url"`
 	Shard            []uint      `json:"shard,omitempty"`
 	Application      interface{} `json:"application"`
-}
-
-type ReadyEvent struct {
-	T  EventName   `json:"t"`
-	S  uint64      `json:"s"`
-	Op EventOpcode `json:"op"`
-	D  ReadyEventD `json:"d"`
 }

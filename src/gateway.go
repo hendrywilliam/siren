@@ -37,16 +37,17 @@ type Gateway struct {
 	HTTPClient               *http.Client
 	ctx                      context.Context
 	heartbeatTicker          *time.Ticker
-	heartbeatDuration        time.Duration
-
-	BotToken   string
-	BotIntents uint64
-	BotVersion int
+	BotToken                 string
+	BotIntents               uint64
+	BotVersion               int
+	Resumeable               bool
 	GatewayStatus
 }
 
-func NewGateway(ctx context.Context) *Gateway {
-	const DISCORD_API_VERSION = 10
+const DISCORD_API_VERSION = 10
+const BOT_INTENTS = 641
+
+func NewGateway() *Gateway {
 	botToken := os.Getenv("DC_BOT_TOKEN")
 	if len(botToken) == 0 {
 		panic("provide dc_bot_token")
@@ -57,81 +58,112 @@ func NewGateway(ctx context.Context) *Gateway {
 		RawQuery: fmt.Sprintf("v=%v&encoding=json", DISCORD_API_VERSION),
 	}
 	return &Gateway{
-		HTTPClient:        http.DefaultClient,
-		WSDialer:          websocket.DefaultDialer,
-		ctx:               ctx,
-		heartbeatDuration: 2 * time.Second,
-		WSUrl:             u.String(),
-		BotToken:          botToken,
-		BotIntents:        641,
-		BotVersion:        DISCORD_API_VERSION,
-		GatewayStatus:     GatewayStatusWaitingToIdentify,
+		HTTPClient:    http.DefaultClient,
+		WSDialer:      websocket.DefaultDialer,
+		WSUrl:         u.String(),
+		BotToken:      botToken,
+		BotIntents:    641,
+		BotVersion:    DISCORD_API_VERSION,
+		Resumeable:    false,
+		GatewayStatus: GatewayStatusWaitingToIdentify,
 	}
 }
 
-func (g *Gateway) Open() error {
+func (g *Gateway) Open(ctx context.Context) error {
+	log.Println("Attempting to connect to discord.")
 	var err error
-	log.Println("Attempting to connect to discord")
+	g.ctx = ctx
 	g.WSConn, _, err = g.WSDialer.DialContext(g.ctx, g.WSUrl, nil)
 	if err != nil {
 		g.WSConn.Close()
 		return fmt.Errorf("Failed to connect to discord gateway: %w", err)
 	}
 	g.LastHeartbeatSent = g.getLocalTime()
-	go g.listen()
+	go g.listen(g.WSConn)
 	return nil
 }
 
 // listen to inbound event.
-func (g *Gateway) listen() {
-	defer g.WSConn.Close()
+func (g *Gateway) listen(conn *websocket.Conn) {
 	for {
 		select {
 		case <-g.ctx.Done():
 			log.Println("stop listening")
 			return
 		default:
-			_, message, err := g.WSConn.ReadMessage()
+			g.RWLock.Lock()
+			same := g.WSConn == conn
+			g.RWLock.Unlock()
+			if !same {
+				// If the connection is not the same
+				// it means that we have opened a new connection
+				// we simply exit last "listen" goroutine.
+				return
+			}
+			_, message, err := conn.ReadMessage()
 			if err != nil {
-				panic(err)
+				// should change to reconnect.
 			}
 			event, err := g.parseEvent(message)
-			switch d := event.D.(type) {
-			case HelloEventData:
+			g.Sequence = event.S
+			g.printPrettyJson(event)
+			switch event.Op {
+			case GatewayOpcodeDispatch:
+				switch d := event.D.(type) {
+				case structs.Interaction:
+					interaction := new(structs.InteractionResponse)
+					interaction.Type = structs.InteractionResponseTypeChannelMessageWithSource
+					interaction.Data = structs.InteractionResponseDataMessage{
+						Content: "hello",
+					}
+					go g.sendCallback(d.Token, d.ID, interaction)
+				case structs.ReadyEventData:
+					g.ResumeGatewayURL = d.ResumeGatewayURL
+					g.SessionID = d.SessionID
+					g.GatewayStatus = GatewayStatusReady
+					g.Resumeable = true
+					log.Println("Connection established.")
+				}
+			case GatewayOpcodeHello:
+				if d, ok := event.D.(HelloEventData); ok {
+					g.LastHeartbeatAcknowledge = g.getLocalTime()
+					g.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
+					// dc may send heartbeat, we need to send heartbeat back immediately.
+					if g.GatewayStatus == GatewayStatusReady {
+						_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
+						continue
+					}
+					go g.heartbeating()
+					if g.GatewayStatus == GatewayStatusWaitingToIdentify {
+						identifyEv := IdentifyEventData{
+							Token:   g.BotToken,
+							Intents: g.BotIntents,
+							Properties: IdentifyEventDProperties{
+								Os:      "ubuntu",
+								Browser: "chrome",
+								Device:  "refrigerator",
+							},
+						}
+						err := g.sendEvent(websocket.TextMessage, GatewayOpcodeIdentify, identifyEv)
+						if err != nil {
+							panic("failed to identify current session.")
+						}
+					}
+				}
+			case GatewayOpcodeHeartbeatAck:
 				g.LastHeartbeatAcknowledge = g.getLocalTime()
-				g.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
-				go g.heartbeating()
-				if g.GatewayStatus == GatewayStatusWaitingToIdentify {
-					identifyEv := IdentifyEventData{
-						Token:   g.BotToken,
-						Intents: g.BotIntents,
-						Properties: IdentifyEventDProperties{
-							Os:      "ubuntu",
-							Browser: "chrome",
-							Device:  "refrigerator",
-						},
-					}
-					err := g.sendEvent(websocket.TextMessage, GatewayOpcodeIdentify, identifyEv)
-					if err != nil {
-						panic("Failed to identify current session.")
-					}
+			case GatewayOpcodeReconnect:
+				if g.Resumeable {
+					g.reconnect()
 				}
-			case structs.Interaction:
-				interaction := new(structs.InteractionResponse)
-				interaction.Type = structs.InteractionResponseTypeChannelMessageWithSource
-				interaction.Data = structs.InteractionResponseDataMessage{
-					Content: "hello",
-				}
-				go g.sendCallback(d.Token, d.ID, interaction)
-			default:
-				continue
 			}
 		}
 	}
 }
 
 func (g *Gateway) reconnect() {
-
+	g.Open(g.ctx)
+	return
 }
 
 func (g *Gateway) heartbeating() {
@@ -142,14 +174,22 @@ func (g *Gateway) heartbeating() {
 		case <-g.ctx.Done():
 			return
 		case <-g.heartbeatTicker.C:
-			lastNonce := time.Now().UnixMilli()
-			_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, lastNonce)
-			log.Println("Heartbeating sent.")
+			_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
+			g.LastHeartbeatSent = g.getLocalTime()
+			log.Println("Heartbeat event sent.")
 		}
 	}
 }
 
-func (g *Gateway) close() {}
+func (g *Gateway) close() {
+	if g.heartbeatTicker != nil {
+		g.heartbeatTicker.Stop()
+		log.Println("Heartbeat Ticker stopped.")
+	}
+	g.WSConn.Close()
+	log.Println("Connection stopped.")
+	return
+}
 
 func (g *Gateway) sendEvent(messageType int, op EventOpcode, d GatewayEventData) error {
 	data, err := json.Marshal(GatewayEvent{
@@ -168,6 +208,10 @@ func (g *Gateway) getLocalTime() time.Time {
 	return time.Now().UTC().Local()
 }
 
+func (g *Gateway) getLastNonce() int64 {
+	return time.Now().UnixMilli()
+}
+
 func (g *Gateway) parseEvent(data []byte) (GatewayEvent, error) {
 	var event GatewayEvent
 	err := json.Unmarshal(data, &event)
@@ -184,12 +228,22 @@ func (g *Gateway) parseEvent(data []byte) (GatewayEvent, error) {
 		}
 		event.D = helloData
 	case GatewayOpcodeDispatch:
-		var dispatchData structs.Interaction
-		err = json.Unmarshal(dataD, &dispatchData)
-		if err != nil {
-			return GatewayEvent{}, err
+		switch event.T {
+		case structs.EventNameReady:
+			var dispatchData structs.ReadyEventData
+			err = json.Unmarshal(dataD, &dispatchData)
+			if err != nil {
+				return GatewayEvent{}, err
+			}
+			event.D = dispatchData
+		case structs.EventNameInteractionCreate:
+			var dispatchData structs.Interaction
+			err = json.Unmarshal(dataD, &dispatchData)
+			if err != nil {
+				return GatewayEvent{}, err
+			}
+			event.D = dispatchData
 		}
-		event.D = dispatchData
 	}
 	return event, nil
 }
@@ -210,6 +264,16 @@ func (g *Gateway) sendCallback(interactionToken string, interactionId string, da
 	response, _ := g.HTTPClient.Do(request)
 	if response.StatusCode == http.StatusNoContent {
 		log.Println("Interaction callback sent.")
+	} else {
+		log.Println("Failed to send callback interaction.")
 	}
 	return
+}
+
+func (g *Gateway) printPrettyJson(data any) {
+	prettyJson, err := json.MarshalIndent(data, "  ", "  ")
+	if err != nil {
+		return
+	}
+	log.Printf("\n%s\n", string(prettyJson))
 }

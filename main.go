@@ -23,8 +23,8 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), signals...)
 	defer stop()
-	g := src.NewGateway(ctx)
-	err = g.Open()
+	g := src.NewGateway()
+	err = g.Open(ctx)
 	if err != nil {
 		stop()
 	}
