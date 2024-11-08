@@ -5,6 +5,8 @@ type EventName = string
 const (
 	EventNameInteractionCreate EventName = "INTERACTION_CREATE"
 	EventNameReady             EventName = "READY"
+	EventNameVoiceServerUpdate EventName = "VOICE_SERVER_UPDATE"
+	EventNameVoiceStateUpdate  EventName = "VOICE_STATE_UPDATE"
 )
 
 type EventOpcode = uint8

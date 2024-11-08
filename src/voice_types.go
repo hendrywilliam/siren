@@ -1,8 +1,6 @@
-package structs
+package src
 
 import "time"
-
-// regular and voice gateway has different opcodes and codes.
 
 type VoiceOpcode = uint8
 
@@ -52,13 +50,6 @@ const (
 	VoiceCloseEventCodesUnknownEncryptionMode VoiceCloseCode = 4016
 )
 
-type VoiceStateUpdateData struct {
-	GuildID   string `json:"guild_id"`
-	ChannelID string `json:"channel_id"`
-	SelfMute  bool   `json:"self_mute"`
-	SelfDeaf  bool   `json:"self_deaf"`
-}
-
 // voice state
 type VoiceState struct {
 	GuildID                 string      `json:"guild_id"`
@@ -76,9 +67,18 @@ type VoiceState struct {
 	RequestToSpeakTimestamp time.Time   `json:"request_to_speak_timestamp"`
 }
 
-// http response when interacting to discord's resources
-type ErrorHTTPResponse struct {
-	Message string      `json:"message"`
-	Code    uint        `json:"code"`
-	Errors  interface{} `json:"errors,omitempty"`
+// identify payload
+type VoiceIdentify struct {
+	ServerId  string `json:"server_id"`
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	Token     string `json:"token"`
+}
+
+type VoiceReady struct {
+	SSRC              uint32   `json:"ssrc"`
+	IP                string   `json:"ip"`
+	Port              uint16   `json:"port"`
+	Modes             []string `json:"modes"`
+	HeartbeatInterval uint     `json:"heartbeat_interval"`
 }

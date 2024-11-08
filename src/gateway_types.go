@@ -1,5 +1,11 @@
 package src
 
+import (
+	"time"
+
+	"github.com/hendrywilliam/siren/src/structs"
+)
+
 type GatewayOpcode = uint8
 
 const (
@@ -52,4 +58,25 @@ type GatewayVoiceState struct {
 	ChannelID string `json:"channel_id"`
 	SelfMute  bool   `json:"self_mute"`
 	SelfDeaf  bool   `json:"self_deaf"`
+}
+
+type VoiceStateUpdateData struct {
+	Member                  *structs.Member `json:"member"`
+	UserID                  string          `json:"user_id"`
+	Suppress                bool            `json:"suppress"`
+	SessionID               string          `json:"session_id"`
+	SelfVideo               bool            `json:"self_video"`
+	SelfMute                bool            `json:"self_mute"`
+	SelfDeaf                bool            `json:"self_deaf"`
+	RequestToSpeakTimestamp time.Time       `json:"request_to_speak_timestamp,omitempty"`
+	Mute                    bool            `json:"mute"`
+	GuildID                 string          `json:"guild_id"`
+	Deaf                    bool            `json:"deaf"`
+	ChannelID               string          `json:"channel_id"`
+}
+
+type VoiceServerUpdateData struct {
+	Token    string `json:"token"`
+	GuildID  string `json:"guild_id"`
+	Endpoint string `json:"endpoint"`
 }
