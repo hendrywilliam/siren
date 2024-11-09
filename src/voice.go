@@ -19,10 +19,10 @@ type Voice struct {
 	wsDialer *websocket.Dialer
 	wsConn   *websocket.Conn
 
-	// one guild state
 	voiceGatewayURL string
 	sessionID       string
-	serverID        string
+	guildID         string
+	serverID        string // guild id
 	userID          string
 	status          GatewayStatus
 
