@@ -34,12 +34,12 @@ type Gateway struct {
 	wsDialer                 *websocket.Dialer
 	LastHeartbeatAcknowledge time.Time // local time.
 	LastHeartbeatSent        time.Time // local time.
-	Sequence                 uint64
+	sequence                 uint64
 	HTTPClient               *http.Client
 	ctx                      context.Context
 	heartbeatTicker          *time.Ticker
-	Resumeable               bool
-	GatewayStatus
+	resumeable               bool
+	status                   GatewayStatus
 
 	// Default Gateway state.
 	BotToken       string
@@ -77,8 +77,8 @@ func NewGateway() *Gateway {
 		BotToken:       botToken,
 		BotIntents:     641,
 		BotVersion:     ver,
-		Resumeable:     false,
-		GatewayStatus:  GatewayStatusDisconnected,
+		resumeable:     false,
+		status:         GatewayStatusDisconnected,
 		DiscordBaseURL: baseUrl,
 		vg:             NewVoice(),
 	}
@@ -114,15 +114,14 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				// we simply exit last "listen" goroutine.
 				return
 			}
-			g.RWLock.Lock()
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				// should change to reconnect.
+				panic(err)
 			}
-			g.RWLock.Unlock()
 			event, err := g.parseEvent(message)
-			g.Sequence = event.S
-			g.printPrettyJson(event)
+			g.sequence = event.S
+			// g.printPrettyJson(event)
 			switch event.Op {
 			case GatewayOpcodeDispatch:
 				switch d := event.D.(type) {
@@ -141,8 +140,8 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				case structs.ReadyEventData:
 					g.ResumeGatewayURL = d.ResumeGatewayURL
 					g.SessionID = d.SessionID
-					g.GatewayStatus = GatewayStatusReady
-					g.Resumeable = true
+					g.status = GatewayStatusReady
+					g.resumeable = true
 					log.Println("Connection established.")
 				case VoiceStateUpdateData:
 					g.vg.sessionID = d.SessionID
@@ -157,9 +156,9 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				if d, ok := event.D.(HelloEventData); ok {
 					g.LastHeartbeatAcknowledge = g.getLocalTime()
 					g.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
-					g.GatewayStatus = GatewayStatusWaitingToIdentify
+					g.status = GatewayStatusWaitingToIdentify
 					go g.heartbeating()
-					if g.GatewayStatus == GatewayStatusWaitingToIdentify {
+					if g.status == GatewayStatusWaitingToIdentify {
 						identifyEv := IdentifyEventData{
 							Token:   g.BotToken,
 							Intents: g.BotIntents,
@@ -181,7 +180,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				g.LastHeartbeatAcknowledge = g.getLocalTime()
 				log.Println("Heartbeat acknowledged.")
 			case GatewayOpcodeReconnect:
-				if g.Resumeable {
+				if g.resumeable {
 					g.reconnect()
 				}
 			}

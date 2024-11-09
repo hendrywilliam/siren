@@ -30,10 +30,11 @@ type Voice struct {
 	lastHeartbeatSent        time.Time
 	heartbeatTicker          *time.Ticker
 
-	ctx   context.Context
-	token string
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+	token     string
 
-	ssrc       uint16
+	ssrc       uint32
 	botVersion string
 	botToken   string // for http request
 }
@@ -57,20 +58,23 @@ func NewVoice() *Voice {
 }
 
 func (v *Voice) Open(ctx context.Context) {
-	v.ctx = ctx
 	var err error
+	cancelCtx, cancel := context.WithCancel(ctx)
+	v.ctxCancel = cancel
+	v.ctx = cancelCtx
 	url := url.URL{
 		Scheme:   "wss",
 		Host:     v.voiceGatewayURL,
 		RawQuery: fmt.Sprintf("v=%s", v.botVersion),
 	}
-	v.wsConn, _, err = v.wsDialer.DialContext(ctx, url.String(), nil)
+	v.wsConn, _, err = v.wsDialer.DialContext(v.ctx, url.String(), nil)
 	if err != nil {
 		// should handle error instead of panic
 		// do it later.
 		panic(err)
 	}
 	go v.listen(v.wsConn)
+	return
 }
 
 func (v *Voice) listen(conn *websocket.Conn) {
@@ -86,10 +90,11 @@ func (v *Voice) listen(conn *websocket.Conn) {
 				return
 			}
 			_, message, err := conn.ReadMessage()
-			log.Println(string(message))
 			if err != nil {
-				// should handle error instead of panic
-				// do it later.
+				if websocket.IsCloseError(err, VoiceCloseEventCodesDisconnected) {
+					v.close()
+					return
+				}
 				panic(err)
 			}
 			event, err := v.parseEvent(message)
@@ -101,7 +106,6 @@ func (v *Voice) listen(conn *websocket.Conn) {
 					v.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
 					v.status = GatewayStatusWaitingToIdentify
 					go v.heartbeating()
-
 					if v.status == GatewayStatusWaitingToIdentify {
 						identifyEvent := VoiceIdentify{
 							ServerId:  v.serverID,
@@ -121,9 +125,19 @@ func (v *Voice) listen(conn *websocket.Conn) {
 	}
 }
 
+func (v *Voice) close() {
+	defer log.Println("Voice connection closed.")
+	if v.heartbeatTicker != nil {
+		v.heartbeatTicker.Stop()
+		v.heartbeatTicker = nil
+	}
+	v.ctxCancel()
+	v.wsConn.Close()
+	return
+}
+
 func (v *Voice) heartbeating() {
-	defer v.heartbeatTicker.Stop()
-	defer log.Println("Heartbeating stopped.")
+	defer log.Println("Voice heartbeating stopped.")
 	for {
 		select {
 		case <-v.ctx.Done():

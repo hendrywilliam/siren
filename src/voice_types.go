@@ -1,6 +1,8 @@
 package src
 
-import "time"
+import (
+	"time"
+)
 
 type VoiceOpcode = uint8
 
@@ -33,7 +35,7 @@ const (
 )
 
 // voice close event codes
-type VoiceCloseCode = uint16
+type VoiceCloseCode = int
 
 const (
 	VoiceCloseEventCodesUnknownOpcode         VoiceCloseCode = 4001
