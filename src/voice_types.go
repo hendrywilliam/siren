@@ -77,10 +77,63 @@ type VoiceIdentify struct {
 	Token     string `json:"token"`
 }
 
+type VoiceReadyStreams struct {
+	Active  bool   `json:"active"`
+	Quality uint   `json:"quality"`
+	RID     string `json:"rid"`
+	RTXSSRC uint16 `json:"rtx_ssrc"`
+	SSRC    uint32 `json:""`
+}
+
 type VoiceReady struct {
-	SSRC              uint32   `json:"ssrc"`
-	IP                string   `json:"ip"`
-	Port              uint16   `json:"port"`
-	Modes             []string `json:"modes"`
-	HeartbeatInterval uint     `json:"heartbeat_interval"`
+	Experiments []string          `json:"experiments"`
+	SSRC        uint32            `json:"ssrc"`
+	IP          string            `json:"ip"`
+	Port        uint16            `json:"port"`
+	Modes       []string          `json:"modes"`
+	Streams     VoiceReadyStreams `json:"stream"`
+}
+
+type VoiceIPDiscovery struct {
+	Type    uint16
+	Length  uint16
+	SSRC    uint32
+	Address [64]byte
+	Port    uint16
+}
+
+type SelectProtocolData struct {
+	Address string `json:"address"`
+	Port    uint16 `json:"port"`
+	Mode    string `json:"mode"`
+}
+
+type SelectProtocol struct {
+	Protocol string             `json:"protocol"`
+	Data     SelectProtocolData `json:"data"`
+}
+
+type SessionDescription struct {
+	AudioCodec          string   `json:"audio_codec"`
+	DaveProtocolVersion uint8    `json:"dave_protocol_version"`
+	MediaSessionID      string   `json:"media_session_id"`
+	Mode                string   `json:"mode"`
+	SecretKey           [32]byte `json:"secret_key"`
+	SecureFramesVersion uint8    `json:"secure_frames_version"`
+	VideoCodec          string   `json:"video_codec"`
+}
+
+type HeartbeatData struct {
+	T      int64  `json:"t"`
+	SeqAck uint64 `json:"seq_ack"` // needed in v8 or greater.
+}
+
+type ClientsConnect struct {
+	UsersID []string `json:"users_id"`
+}
+
+type Speaking struct {
+	Speaking uint   `json:"speaking"`
+	Delay    uint   `json:"delay"`
+	SSRC     uint32 `json:"ssrc"`
 }

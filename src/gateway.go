@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,6 +46,7 @@ type Gateway struct {
 	discordBaseURL string
 
 	voiceManager *VoiceManager
+	logger       *Logger
 }
 
 func NewGateway() *Gateway {
@@ -78,11 +78,12 @@ func NewGateway() *Gateway {
 		status:         GatewayStatusDisconnected,
 		discordBaseURL: baseUrl,
 		voiceManager:   NewVoiceManager(),
+		logger:         NewLogger(),
 	}
 }
 
 func (g *Gateway) Open(ctx context.Context) error {
-	log.Println("Attempting to connect to Discord.")
+	g.logger.Info("Connecting to discord...")
 	var err error
 	g.ctx = ctx
 	g.wsConn, _, err = g.wsDialer.DialContext(g.ctx, g.wsurl, nil)
@@ -99,7 +100,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 	for {
 		select {
 		case <-g.ctx.Done():
-			log.Println("stop listening")
+			g.logger.Info("Stop listening.")
 			return
 		default:
 			g.rwlock.Lock()
@@ -113,12 +114,11 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 			}
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				// should change to reconnect.
 				panic(err)
 			}
 			event, err := g.parseEvent(message)
 			g.sequence = event.S
-			g.printPrettyJson(event)
+			g.logger.JSON(event)
 			switch event.Op {
 			case GatewayOpcodeDispatch:
 				switch d := event.D.(type) {
@@ -139,10 +139,9 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 					g.sessionID = d.SessionID
 					g.status = GatewayStatusReady
 					g.resumeable = true
-					log.Println("Connection established.")
+					g.logger.Info("Connection established")
 				case VoiceStateUpdateData:
 					if voice := g.voiceManager.GetVoice(d.GuildID); voice != nil {
-						// if channel id is nil, means the bot is disconnected.
 						if len(d.ChannelID) == 0 {
 							g.voiceManager.DeleteVoice(d.GuildID)
 						}
@@ -187,7 +186,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 				_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
 			case GatewayOpcodeHeartbeatAck:
 				g.lastHeartbeatAcknowledge = g.getLocalTime()
-				log.Println("Heartbeat acknowledged.")
+				g.logger.Info("Heartbeat acknowledged.")
 			case GatewayOpcodeReconnect:
 				if g.resumeable {
 					g.reconnect()
@@ -204,7 +203,7 @@ func (g *Gateway) reconnect() {
 
 func (g *Gateway) heartbeating() {
 	defer g.heartbeatTicker.Stop()
-	defer log.Println("Heartbeating stopped.")
+	defer g.logger.Info("Heartbeating stopped.")
 	for {
 		select {
 		case <-g.ctx.Done():
@@ -212,7 +211,7 @@ func (g *Gateway) heartbeating() {
 		case <-g.heartbeatTicker.C:
 			_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
 			g.lastHeartbeatSent = g.getLocalTime()
-			log.Println("Heartbeat event sent.")
+			g.logger.Info("Heartbeat event sent.")
 		}
 	}
 }
@@ -220,10 +219,10 @@ func (g *Gateway) heartbeating() {
 func (g *Gateway) close() {
 	if g.heartbeatTicker != nil {
 		g.heartbeatTicker.Stop()
-		log.Println("Heartbeat Ticker stopped.")
+		g.logger.Info("Heartbeat ticker stopped.")
 	}
 	g.wsConn.Close()
-	log.Println("Connection stopped.")
+	g.logger.Info("Connection stopped.")
 	return
 }
 
@@ -310,19 +309,11 @@ func (g *Gateway) sendCallback(interactionToken string, interactionId string, da
 			interactionToken),
 		bytes.NewBuffer(rb))
 	if response.StatusCode == http.StatusNoContent {
-		log.Println("Interaction callback sent.")
-	} else {
-		log.Println("Failed to send callback interaction.")
-	}
-	return
-}
-
-func (g *Gateway) printPrettyJson(data any) {
-	prettyJson, err := json.MarshalIndent(data, "  ", "  ")
-	if err != nil {
+		g.logger.Info("Interaction callback sent.")
 		return
 	}
-	log.Printf("\n%s\n", string(prettyJson))
+	g.logger.Warn("Failed to send callback interaction.")
+	return
 }
 
 func (g *Gateway) mentionUser(userId string) string {
@@ -347,7 +338,6 @@ func (g *Gateway) sendHTTPRequest(ctx context.Context, httpMethod string, url st
 func (g *Gateway) handlePlayCmd(interaction *structs.Interaction) {
 	i := new(structs.InteractionResponse)
 	i.Type = structs.InteractionResponseTypeChannelMessageWithSource
-
 	response, err := g.sendHTTPRequest(g.ctx,
 		http.MethodGet,
 		fmt.Sprintf("%s/v%s/guilds/%s/voice-states/%s", g.discordBaseURL, g.botVersion, interaction.GuildID, interaction.Member.User.ID),
@@ -370,7 +360,7 @@ func (g *Gateway) handlePlayCmd(interaction *structs.Interaction) {
 	data := &GatewayVoiceState{
 		GuildID:   interaction.GuildID,
 		ChannelID: voiceState.ChannelID,
-		SelfMute:  true,
+		SelfMute:  false,
 		SelfDeaf:  false,
 	}
 	g.sendEvent(websocket.TextMessage, GatewayOpcodeVoiceStateUpdate, data)

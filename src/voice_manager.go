@@ -25,10 +25,6 @@ func (vm *VoiceManager) AddVoice(guildId GuildID, voice *Voice) {
 	return
 }
 
-func (vm *VoiceManager) UpdateVoice(guildID GuildID, voice *Voice) {
-
-}
-
 func (vm *VoiceManager) DeleteVoice(guildID GuildID) {
 	if voice := vm.GetVoice(guildID); voice == nil {
 		return
