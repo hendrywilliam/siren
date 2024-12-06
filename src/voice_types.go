@@ -85,6 +85,17 @@ type VoiceReadyStreams struct {
 	SSRC    uint32 `json:""`
 }
 
+type VoiceClientsConnect struct {
+	UserIds []string `json:"user_ids"`
+}
+
+type VoiceResume struct {
+	ServerID            string
+	SessionID           string
+	Token               string
+	SequenceAcknowledge uint64
+}
+
 type VoiceReady struct {
 	Experiments []string          `json:"experiments"`
 	SSRC        uint32            `json:"ssrc"`

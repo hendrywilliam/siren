@@ -79,12 +79,12 @@ func NewGateway() *Gateway {
 		status:         GatewayStatusDisconnected,
 		discordBaseURL: baseUrl,
 		voiceManager:   NewVoiceManager(),
-		logger:         NewLogger(),
+		logger:         NewLogger("gateway"),
 	}
 }
 
 func (g *Gateway) Open(ctx context.Context) error {
-	g.logger.Info("Connecting to discord...")
+	g.logger.Info("connecting to discord...")
 	g.ctx = ctx
 	maxAttempts := 5
 	err := g.retry(func() error {
@@ -98,7 +98,7 @@ func (g *Gateway) Open(ctx context.Context) error {
 		return nil
 	}, maxAttempts)
 	if err != nil {
-		g.logger.Fatal(err.Error())
+		g.logger.Fatal(err)
 	}
 	return nil
 }
@@ -109,7 +109,7 @@ func (g *Gateway) retry(fn func() error, maxAttempts int) error {
 		if err == nil {
 			return nil
 		}
-		g.logger.Error("Connection failed. Reconnecting...")
+		g.logger.Error(fmt.Errorf("connection failed. reconnecting..."))
 		delay := time.Duration(math.Pow(2, float64((attempts-1)))*1000) * time.Millisecond
 		select {
 		case <-time.After(delay):
@@ -118,14 +118,14 @@ func (g *Gateway) retry(fn func() error, maxAttempts int) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("Failed to open a connection after several attempts")
+	return fmt.Errorf("failed to open a connection after several attempts")
 }
 
 func (g *Gateway) listen(conn *websocket.Conn) {
 	for {
 		select {
 		case <-g.ctx.Done():
-			g.logger.Info("Stop listening.")
+			g.logger.Info("stop listening.")
 			return
 		default:
 			g.rwlock.Lock()
@@ -143,7 +143,7 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 			}
 			event, err := g.parseEvent(message)
 			g.sequence = event.S
-			g.logger.JSON(event)
+			// g.logger.JSON(event)
 			switch event.Op {
 			case GatewayOpcodeDispatch:
 				switch d := event.D.(type) {
@@ -164,11 +164,12 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 					g.sessionID = d.SessionID
 					g.status = GatewayStatusReady
 					g.resumeable = true
-					g.logger.Info("Connection established")
+					g.logger.SetAttr("id", d.SessionID)
+					g.logger.Info("connection established")
 				case VoiceStateUpdateData:
-					if voice := g.voiceManager.GetVoice(d.GuildID); voice != nil {
+					if voice := g.voiceManager.Get(d.GuildID); voice != nil {
 						if len(d.ChannelID) == 0 {
-							g.voiceManager.DeleteVoice(d.GuildID)
+							g.voiceManager.Delete(d.GuildID)
 						}
 						continue
 					}
@@ -176,9 +177,9 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 					voice.sessionID = d.SessionID
 					voice.userID = d.UserID
 					voice.serverID = d.GuildID
-					g.voiceManager.AddVoice(d.GuildID, voice)
+					g.voiceManager.Add(d.GuildID, voice)
 				case VoiceServerUpdateData:
-					voice := g.voiceManager.GetVoice(d.GuildID)
+					voice := g.voiceManager.Get(d.GuildID)
 					if voice != nil {
 						voice.voiceGatewayURL = d.Endpoint
 						voice.token = d.Token
@@ -208,10 +209,10 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 					}
 				}
 			case GatewayOpcodeHeartbeat:
-				_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
+				g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
 			case GatewayOpcodeHeartbeatAck:
 				g.lastHeartbeatAcknowledge = g.getLocalTime()
-				g.logger.Info("Heartbeat acknowledged.")
+				g.logger.Info("Gateway heartbeat acknowledged.")
 			case GatewayOpcodeReconnect:
 				if g.resumeable {
 					g.reconnect()
@@ -222,21 +223,21 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 }
 
 func (g *Gateway) reconnect() {
-	_ = g.Open(g.ctx)
+	g.Open(g.ctx)
 	return
 }
 
 func (g *Gateway) heartbeating() {
 	defer g.heartbeatTicker.Stop()
-	defer g.logger.Info("Heartbeating stopped.")
+	defer g.logger.Info("Gateway heartbeating stopped.")
 	for {
 		select {
 		case <-g.ctx.Done():
 			return
 		case <-g.heartbeatTicker.C:
-			_ = g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
+			g.sendEvent(websocket.TextMessage, GatewayOpcodeHeartbeat, g.getLastNonce())
 			g.lastHeartbeatSent = g.getLocalTime()
-			g.logger.Info("Heartbeat event sent.")
+			g.logger.Info("Gateway heartbeat event sent.")
 		}
 	}
 }
@@ -244,10 +245,10 @@ func (g *Gateway) heartbeating() {
 func (g *Gateway) close() {
 	if g.heartbeatTicker != nil {
 		g.heartbeatTicker.Stop()
-		g.logger.Info("Heartbeat ticker stopped.")
+		g.logger.Info("Gateway heartbeat ticker stopped.")
 	}
 	g.wsConn.Close()
-	g.logger.Info("Connection stopped.")
+	g.logger.Info("Gateway connection stopped.")
 	return
 }
 
@@ -334,10 +335,10 @@ func (g *Gateway) sendCallback(interactionToken string, interactionId string, da
 			interactionToken),
 		bytes.NewBuffer(rb))
 	if response.StatusCode == http.StatusNoContent {
-		g.logger.Info("Interaction callback sent.")
+		g.logger.Info("interaction callback sent.")
 		return
 	}
-	g.logger.Warn("Failed to send callback interaction.")
+	g.logger.Warn("failed to send callback interaction.")
 	return
 }
 
@@ -368,7 +369,7 @@ func (g *Gateway) handlePlayCmd(interaction *structs.Interaction) {
 		fmt.Sprintf("%s/v%s/guilds/%s/voice-states/%s", g.discordBaseURL, g.botVersion, interaction.GuildID, interaction.Member.User.ID),
 		nil)
 	if err != nil {
-		i.Data.Content = "Failed to get current voice state."
+		i.Data.Content = "failed to get current voice state."
 		g.sendCallback(interaction.Token, interaction.ID, i)
 		return
 	}
@@ -381,7 +382,7 @@ func (g *Gateway) handlePlayCmd(interaction *structs.Interaction) {
 	defer response.Body.Close()
 	b, _ := io.ReadAll(response.Body)
 	voiceState := new(VoiceState)
-	_ = json.Unmarshal(b, voiceState)
+	json.Unmarshal(b, voiceState)
 	data := &GatewayVoiceState{
 		GuildID:   interaction.GuildID,
 		ChannelID: voiceState.ChannelID,

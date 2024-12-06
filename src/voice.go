@@ -70,7 +70,7 @@ func NewVoice() *Voice {
 		botVersion:               botVersion,
 		botToken:                 botToken,
 		status:                   GatewayStatusDisconnected,
-		logger:                   NewLogger(),
+		logger:                   NewLogger("voice"),
 	}
 }
 
@@ -86,17 +86,21 @@ func (v *Voice) Open(ctx context.Context) {
 	}
 	v.wsConn, _, err = v.wsDialer.DialContext(v.ctx, url.String(), nil)
 	if err != nil {
+		// todo
 		panic(err)
 	}
+	v.logger.SetAttr("id", v.serverID)
 	identifyEvent := VoiceIdentify{
 		ServerId:  v.serverID,
 		UserID:    v.userID,
 		SessionID: v.sessionID,
 		Token:     v.token,
 	}
-	v.sendEvent(websocket.TextMessage, VoiceOpcodeIdentify, identifyEvent)
-	v.logger.Info("Identify event sent.", "ID", v.sessionID)
-	go v.listen(v.wsConn)
+	err = v.sendEvent(websocket.TextMessage, VoiceOpcodeIdentify, identifyEvent)
+	v.logger.Info("identify event sent.")
+	if err == nil {
+		go v.listen(v.wsConn)
+	}
 	return
 }
 
@@ -118,6 +122,7 @@ func (v *Voice) listen(conn *websocket.Conn) {
 					v.close()
 					return
 				}
+				v.logger.Error(err)
 				panic(err)
 			}
 			event, err := v.parseEvent(message)
@@ -136,11 +141,11 @@ func (v *Voice) listen(conn *websocket.Conn) {
 					v.port = d.Port
 					v.ip = d.IP
 					v.encryptionMode = d.Modes[0]
-					_ = v.OpenUDPConn()
+					v.openUDPConn()
 				}
 			case VoiceOpcodeHeartbeatAck:
 				v.lastHeartbeatAcknowledge = v.getLocalTime()
-				v.logger.Info("Voice Heartbeat acknowledged.", "ID", v.sessionID)
+				v.logger.Info("heartbeat acknowledged.")
 			case VoiceOpcodeSessionDescription:
 				if d, ok := event.D.(SessionDescription); ok {
 					v.secretKeys = d.SecretKey
@@ -148,14 +153,28 @@ func (v *Voice) listen(conn *websocket.Conn) {
 				v.sendSpeaking()
 			case VoiceOpcodeClientsConnect:
 				v.status = VoiceGatewayStatusConnected
-				v.logger.Info("Voice connected.", "ID", v.sessionID)
+				v.logger.Info("connected.")
 			}
 		}
 	}
 }
 
+func (v *Voice) resume() error {
+	voiceResumeData := &VoiceResume{
+		ServerID:  v.serverID,
+		SessionID: v.sessionID,
+		Token:     v.token,
+	}
+	err := v.sendEvent(websocket.TextMessage, VoiceOpcodeResume, voiceResumeData)
+	if err != nil {
+		v.logger.Error(fmt.Errorf("failed to resume current session"))
+		return err
+	}
+	return nil
+}
+
 func (v *Voice) close() {
-	defer v.logger.Info("Voice connection closed.", "ID", v.sessionID)
+	defer v.logger.Info("connection closed.")
 	if v.heartbeatTicker != nil {
 		v.heartbeatTicker.Stop()
 		v.heartbeatTicker = nil
@@ -168,16 +187,16 @@ func (v *Voice) close() {
 
 func (v *Voice) heartbeating() {
 	heartbeatData := &HeartbeatData{}
-	defer v.logger.Info("Voice heartbeating stopped.", "ID", v.sessionID)
+	defer v.logger.Info("heartbeating stopped.")
 	for {
 		select {
 		case <-v.ctx.Done():
 			return
 		case <-v.heartbeatTicker.C:
 			heartbeatData.T = v.getLastNonce()
-			_ = v.sendEvent(websocket.TextMessage, VoiceOpcodeHeartbeat, heartbeatData)
+			v.sendEvent(websocket.TextMessage, VoiceOpcodeHeartbeat, heartbeatData)
 			v.lastHeartbeatSent = v.getLocalTime()
-			v.logger.Info("Voice Heartbeat event sent.", "ID", v.sessionID)
+			v.logger.Info("heartbeat event sent.")
 		}
 	}
 }
@@ -201,6 +220,14 @@ func (v *Voice) sendEvent(messageType int, op EventOpcode, d GatewayEventData) e
 
 func (v *Voice) getLastNonce() int64 {
 	return time.Now().UnixMilli()
+}
+
+func (v *Voice) parseError(err error) {
+	// discord errors
+	// if e, ok := err.(*websocket.CloseError); ok {
+	// 	switch
+	// }
+	// // websocket internal errors
 }
 
 func (v *Voice) parseEvent(data []byte) (GatewayEvent, error) {
@@ -233,6 +260,12 @@ func (v *Voice) parseEvent(data []byte) (GatewayEvent, error) {
 		}
 		event.D = sessionDescriptionData
 	case VoiceOpcodeClientsConnect:
+		var clientsConnectData VoiceClientsConnect
+		err = json.Unmarshal(dataD, &clientsConnectData)
+		if err != nil {
+			return GatewayEvent{}, err
+		}
+		event.D = clientsConnectData
 	}
 	return event, nil
 }
@@ -268,13 +301,13 @@ func (v *Voice) sendIPDiscovery() error {
 }
 
 func (v *Voice) sendSpeaking() error {
-	defer v.logger.Info("Speaking event sent.")
-	speakingData := Speaking{
+	defer v.logger.Info("speaking event sent.")
+	speakingData := &Speaking{
 		Speaking: 1,
 		Delay:    0,
 		SSRC:     v.ssrc,
 	}
-	return v.sendEvent(websocket.TextMessage, VoiceOpcodeSpeaking, &speakingData)
+	return v.sendEvent(websocket.TextMessage, VoiceOpcodeSpeaking, speakingData)
 }
 
 func (v *Voice) sendSelectProtocol(ipAddr string, port uint16) error {
@@ -290,11 +323,11 @@ func (v *Voice) sendSelectProtocol(ipAddr string, port uint16) error {
 	if err != nil {
 		return err
 	}
-	v.logger.Info("Select Protocol event sent.", "ID", v.sessionID)
+	v.logger.Info("select protocol event sent.")
 	return nil
 }
 
-func (v *Voice) OpenUDPConn() error {
+func (v *Voice) openUDPConn() error {
 	var err error
 	udpAdd, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%v", v.ip, v.port))
 	if err != nil {

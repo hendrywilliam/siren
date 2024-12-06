@@ -7,30 +7,39 @@ import (
 	"os"
 )
 
-type Logger struct{}
+type Logger struct {
+	levelLogger *slog.Logger
+}
 
-func NewLogger() *Logger {
-	return &Logger{}
+func NewLogger(moduleName string) *Logger {
+	return &Logger{
+		levelLogger: slog.New(slog.NewTextHandler(os.Stdout, nil)).With("module", moduleName),
+	}
+}
+
+func (l *Logger) SetAttr(key string, value any) {
+	l.levelLogger = l.levelLogger.With(key, value)
+	return
 }
 
 func (l *Logger) Info(message string, args ...any) {
-	slog.Info(message, args...)
+	l.levelLogger.Info(message, args...)
 }
 
 func (l *Logger) Debug(message string, args ...any) {
-	slog.Debug(message, args...)
+	l.levelLogger.Debug(message, args...)
 }
 
 func (l *Logger) Warn(message string, args ...any) {
-	slog.Warn(message, args...)
+	l.levelLogger.Warn(message, args...)
 }
 
-func (l *Logger) Error(message string, args ...any) {
-	slog.Error(message, args...)
+func (l *Logger) Error(err error, args ...any) {
+	l.levelLogger.Error(err.Error(), args...)
 }
 
-func (l *Logger) Fatal(message string, args ...any) {
-	l.Error(message, args...)
+func (l *Logger) Fatal(err error, args ...any) {
+	l.Error(err, args...)
 	os.Exit(1)
 }
 

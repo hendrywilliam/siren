@@ -15,8 +15,8 @@ func NewVoiceManager() *VoiceManager {
 	}
 }
 
-func (vm *VoiceManager) AddVoice(guildId GuildID, voice *Voice) {
-	if voice := vm.GetVoice(guildId); voice != nil {
+func (vm *VoiceManager) Add(guildId GuildID, voice *Voice) {
+	if voice := vm.Get(guildId); voice != nil {
 		return
 	}
 	vm.mu.Lock()
@@ -25,8 +25,8 @@ func (vm *VoiceManager) AddVoice(guildId GuildID, voice *Voice) {
 	return
 }
 
-func (vm *VoiceManager) DeleteVoice(guildID GuildID) {
-	if voice := vm.GetVoice(guildID); voice == nil {
+func (vm *VoiceManager) Delete(guildID GuildID) {
+	if voice := vm.Get(guildID); voice == nil {
 		return
 	}
 	vm.mu.Lock()
@@ -35,7 +35,7 @@ func (vm *VoiceManager) DeleteVoice(guildID GuildID) {
 	return
 }
 
-func (vm *VoiceManager) GetVoice(guildID GuildID) *Voice {
+func (vm *VoiceManager) Get(guildID GuildID) *Voice {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 	return vm.activeVoices[guildID]
