@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,16 +85,40 @@ func NewGateway() *Gateway {
 
 func (g *Gateway) Open(ctx context.Context) error {
 	g.logger.Info("Connecting to discord...")
-	var err error
 	g.ctx = ctx
-	g.wsConn, _, err = g.wsDialer.DialContext(g.ctx, g.wsurl, nil)
+	maxAttempts := 5
+	err := g.retry(func() error {
+		var err error
+		g.wsConn, _, err = g.wsDialer.DialContext(g.ctx, g.wsurl, nil)
+		if err != nil {
+			return err
+		}
+		g.lastHeartbeatSent = g.getLocalTime()
+		go g.listen(g.wsConn)
+		return nil
+	}, maxAttempts)
 	if err != nil {
-		g.wsConn.Close()
-		return fmt.Errorf("Failed to connect to discord gateway: %w", err)
+		g.logger.Fatal(err.Error())
 	}
-	g.lastHeartbeatSent = g.getLocalTime()
-	go g.listen(g.wsConn)
 	return nil
+}
+
+func (g *Gateway) retry(fn func() error, maxAttempts int) error {
+	for attempts := 1; attempts <= maxAttempts; attempts++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		g.logger.Error("Connection failed. Reconnecting...")
+		delay := time.Duration(math.Pow(2, float64((attempts-1)))*1000) * time.Millisecond
+		select {
+		case <-time.After(delay):
+			continue
+		case <-g.ctx.Done():
+			return nil
+		}
+	}
+	return fmt.Errorf("Failed to open a connection after several attempts")
 }
 
 func (g *Gateway) listen(conn *websocket.Conn) {

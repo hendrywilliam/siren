@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"log/slog"
+	"os"
 )
 
 type Logger struct{}
@@ -26,6 +27,11 @@ func (l *Logger) Warn(message string, args ...any) {
 
 func (l *Logger) Error(message string, args ...any) {
 	slog.Error(message, args...)
+}
+
+func (l *Logger) Fatal(message string, args ...any) {
+	l.Error(message, args...)
+	os.Exit(1)
 }
 
 func (l *Logger) JSON(message any) {
