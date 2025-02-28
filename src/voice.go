@@ -5,14 +5,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hendrywilliam/siren/src/structs"
 )
 
 type VoiceGatewayStatus = string
@@ -23,21 +24,68 @@ const (
 	VoiceGatewayStatusWaitingToIdentify VoiceGatewayStatus = "WAITING_TO_IDENTIFY"
 )
 
-// voice gateway
+type VoiceOpcode = uint8
+
+const (
+	VoiceOpcodeIdentify           VoiceOpcode = 0
+	VoiceOpcodeSelectProtocol     VoiceOpcode = 1
+	VoiceOpcodeReady              VoiceOpcode = 2
+	VoiceOpcodeHeartbeat          VoiceOpcode = 3
+	VoiceOpcodeSessionDescription VoiceOpcode = 4
+	VoiceOpcodeSpeaking           VoiceOpcode = 5
+	VoiceOpcodeHeartbeatAck       VoiceOpcode = 6
+	VoiceOpcodeResume             VoiceOpcode = 7
+	VoiceOpcodeHello              VoiceOpcode = 8
+	VoiceOpcodeResumed            VoiceOpcode = 9
+	VoiceOpcodeClientsConnect     VoiceOpcode = 11
+	VoiceOpcodeClientDisconnect   VoiceOpcode = 13
+
+	// dave opcodes
+	VoiceOpcodeDAVEPrepareTransition        VoiceOpcode = 21
+	VoiceOpcodeDAVEExecuteTransition        VoiceOpcode = 22
+	VoiceOpcodeDAVETransitionReady          VoiceOpcode = 23
+	VoiceOpcodeDAVEPrepareEpoch             VoiceOpcode = 24
+	VoiceOpcodeDAVEMLSExternalSender        VoiceOpcode = 25
+	VoiceOpcodeDAVEMLSKeyPackage            VoiceOpcode = 26
+	VoiceOpcodeDAVEMLSProposals             VoiceOpcode = 27
+	VoiceOpcodeDAVECommitWelcome            VoiceOpcode = 28
+	VoiceOpcodeDAVEAnnounceCommitTransition VoiceOpcode = 29
+	VoiceOpcodeDAVEMLSWelcome               VoiceOpcode = 30
+	VoiceOpcodeDAVEMLSInvalidCommitWelcome  VoiceOpcode = 31
+)
+
+// voice close event codes
+type VoiceCloseCode = int
+
+const (
+	VoiceCloseEventCodesUnknownOpcode         VoiceCloseCode = 4001
+	VoiceCloseEventCodesFailedToDecodePayload VoiceCloseCode = 4002
+	VoiceCloseEventCodesNotAuthenticated      VoiceCloseCode = 4003
+	VoiceCloseEventCodesAuthenticationFailed  VoiceCloseCode = 4004
+	VoiceCloseEventCodesAlreadyAuthenticated  VoiceCloseCode = 4005
+	VoiceCloseEventCodesSessionNoLongerValid  VoiceCloseCode = 4006
+	VoiceCloseEventCodesSessionTimeout        VoiceCloseCode = 4009
+	VoiceCloseEventCodesServerNotFound        VoiceCloseCode = 4011
+	VoiceCloseEventCodesUnknownProtocol       VoiceCloseCode = 4012
+	VoiceCloseEventCodesDisconnected          VoiceCloseCode = 4014
+	VoiceCloseEventCodesVoiceServerCrashed    VoiceCloseCode = 4015
+	VoiceCloseEventCodesUnknownEncryptionMode VoiceCloseCode = 4016
+)
+
 type Voice struct {
 	rwlock     sync.RWMutex
 	wsDialer   *websocket.Dialer
 	wsConn     *websocket.Conn
-	logger     *Logger
+	log        *slog.Logger
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
 	voiceGatewayURL string
 	sessionID       string
-	serverID        string // guild id.
+	serverID        string // Guild ID.
 	userID          string
-	token           string // token for this current session.
-	status          GatewayStatus
+	token           string // Token for this current session.
+	status          VoiceGatewayStatus
 	mediaSessionID  string
 
 	lastHeartbeatAcknowledge time.Time
@@ -45,7 +93,7 @@ type Voice struct {
 	heartbeatTicker          *time.Ticker
 
 	botVersion string
-	botToken   string // for http request.
+	botToken   string // Token for HTTP request.
 
 	udpConn        *net.UDPConn
 	port           uint16
@@ -55,33 +103,42 @@ type Voice struct {
 	secretKeys     [32]byte
 }
 
-func NewVoice() *Voice {
-	botVersion := os.Getenv("DC_VOICE_GATEWAY_VERSION")
-	if len(botVersion) == 0 {
-		panic("provide DC_VOICE_GATEWAY_VERSION")
-	}
-	botToken := os.Getenv("DC_BOT_TOKEN")
-	if len(botToken) == 0 {
-		panic("provide dc_bot_token")
-	}
+type NewVoiceArguments struct {
+	SessionID         string
+	UserID            string
+	ServerID          string // Guild ID.
+	DiscordBotVersion string
+	DiscordBotToken   string
+	Log               *slog.Logger
+}
+
+func NewVoice(args NewVoiceArguments) *Voice {
+	voiceIdentifier := strings.Builder{}
+	voiceIdentifier.WriteString("voice_")
+	voiceIdentifier.WriteString(args.SessionID)
 	return &Voice{
 		wsDialer:                 websocket.DefaultDialer,
 		lastHeartbeatAcknowledge: time.Now().Local(),
-		botVersion:               botVersion,
-		botToken:                 botToken,
-		status:                   GatewayStatusDisconnected,
-		logger:                   NewLogger("voice"),
+		botVersion:               args.DiscordBotVersion,
+		botToken:                 args.DiscordBotToken,
+		status:                   VoiceGatewayStatusDisconnected,
+		log:                      args.Log.With(voiceIdentifier.String()),
 	}
 }
 
-func (v *Voice) Open(ctx context.Context) {
+type VoiceOpenArgs struct {
+	VoiceGatewayURL string
+	VoiceToken      string
+}
+
+func (v *Voice) Open(ctx context.Context, args VoiceOpenArgs) {
 	var err error
 	cancelCtx, cancel := context.WithCancel(ctx)
 	v.cancelFunc = cancel
 	v.ctx = cancelCtx
 	url := url.URL{
 		Scheme:   "wss",
-		Host:     v.voiceGatewayURL,
+		Host:     args.VoiceGatewayURL,
 		RawQuery: fmt.Sprintf("v=%s", v.botVersion),
 	}
 	v.wsConn, _, err = v.wsDialer.DialContext(v.ctx, url.String(), nil)
@@ -89,15 +146,14 @@ func (v *Voice) Open(ctx context.Context) {
 		// todo
 		panic(err)
 	}
-	v.logger.SetAttr("id", v.serverID)
-	identifyEvent := VoiceIdentify{
+	identifyEvent := structs.VoiceIdentify{
 		ServerId:  v.serverID,
 		UserID:    v.userID,
 		SessionID: v.sessionID,
-		Token:     v.token,
+		Token:     args.VoiceToken,
 	}
 	err = v.sendEvent(websocket.TextMessage, VoiceOpcodeIdentify, identifyEvent)
-	v.logger.Info("identify event sent.")
+	v.log.Info("Identify event sent.")
 	if err == nil {
 		go v.listen(v.wsConn)
 	}
@@ -122,21 +178,21 @@ func (v *Voice) listen(conn *websocket.Conn) {
 					v.close()
 					return
 				}
-				v.logger.Error(err)
+				v.log.Error(err.Error())
 				panic(err)
 			}
 			event, err := v.parseEvent(message)
-			v.logger.JSON(event)
+			// v.log.Info(event)
 			switch event.Op {
 			case VoiceOpcodeHello:
-				if d, ok := event.D.(HelloEventData); ok {
+				if d, ok := event.D.(structs.HelloEventData); ok {
 					v.lastHeartbeatAcknowledge = v.getLocalTime()
 					v.heartbeatTicker = time.NewTicker(time.Duration(d.HeartbeatInterval) * time.Millisecond)
-					v.status = GatewayStatusWaitingToIdentify
+					v.status = VoiceGatewayStatusWaitingToIdentify
 					go v.heartbeating()
 				}
 			case VoiceOpcodeReady:
-				if d, ok := event.D.(VoiceReady); ok {
+				if d, ok := event.D.(structs.VoiceReady); ok {
 					v.ssrc = d.SSRC
 					v.port = d.Port
 					v.ip = d.IP
@@ -145,36 +201,35 @@ func (v *Voice) listen(conn *websocket.Conn) {
 				}
 			case VoiceOpcodeHeartbeatAck:
 				v.lastHeartbeatAcknowledge = v.getLocalTime()
-				v.logger.Info("heartbeat acknowledged.")
+				v.log.Info("Heartbeat Acknowledged.")
 			case VoiceOpcodeSessionDescription:
-				if d, ok := event.D.(SessionDescription); ok {
+				if d, ok := event.D.(structs.SessionDescription); ok {
 					v.secretKeys = d.SecretKey
 				}
 				v.sendSpeaking()
 			case VoiceOpcodeClientsConnect:
 				v.status = VoiceGatewayStatusConnected
-				v.logger.Info("connected.")
+				v.log.Info("Voice connected.")
 			}
 		}
 	}
 }
 
 func (v *Voice) resume() error {
-	voiceResumeData := &VoiceResume{
+	voiceResumeData := &structs.VoiceResume{
 		ServerID:  v.serverID,
 		SessionID: v.sessionID,
 		Token:     v.token,
 	}
 	err := v.sendEvent(websocket.TextMessage, VoiceOpcodeResume, voiceResumeData)
 	if err != nil {
-		v.logger.Error(fmt.Errorf("failed to resume current session"))
+		v.log.Error("Failed to resume current session.")
 		return err
 	}
 	return nil
 }
 
 func (v *Voice) close() {
-	defer v.logger.Info("connection closed.")
 	if v.heartbeatTicker != nil {
 		v.heartbeatTicker.Stop()
 		v.heartbeatTicker = nil
@@ -182,21 +237,22 @@ func (v *Voice) close() {
 	v.status = VoiceGatewayStatusDisconnected
 	v.cancelFunc()
 	v.wsConn.Close()
+	v.log.Info("Connection closed.")
 	return
 }
 
 func (v *Voice) heartbeating() {
-	heartbeatData := &HeartbeatData{}
-	defer v.logger.Info("heartbeating stopped.")
 	for {
 		select {
 		case <-v.ctx.Done():
+			v.log.Info("Heartbeating stopped.")
 			return
 		case <-v.heartbeatTicker.C:
-			heartbeatData.T = v.getLastNonce()
-			v.sendEvent(websocket.TextMessage, VoiceOpcodeHeartbeat, heartbeatData)
+			hbData := structs.HeartbeatData{}
+			hbData.T = v.getLastNonce()
+			v.sendEvent(websocket.TextMessage, VoiceOpcodeHeartbeat, hbData)
 			v.lastHeartbeatSent = v.getLocalTime()
-			v.logger.Info("heartbeat event sent.")
+			v.log.Info("Heartbeat event sent.")
 		}
 	}
 }
@@ -205,8 +261,8 @@ func (v *Voice) getLocalTime() time.Time {
 	return time.Now().UTC().Local()
 }
 
-func (v *Voice) sendEvent(messageType int, op EventOpcode, d GatewayEventData) error {
-	data, err := json.Marshal(GatewayEvent{
+func (v *Voice) sendEvent(messageType int, op structs.EventOpcode, d structs.GatewayEventData) error {
+	data, err := json.Marshal(structs.GatewayEvent{
 		Op: op,
 		D:  d,
 	})
@@ -230,40 +286,40 @@ func (v *Voice) parseError(err error) {
 	// // websocket internal errors
 }
 
-func (v *Voice) parseEvent(data []byte) (GatewayEvent, error) {
-	var event GatewayEvent
+func (v *Voice) parseEvent(data []byte) (structs.GatewayEvent, error) {
+	var event structs.GatewayEvent
 	err := json.Unmarshal(data, &event)
 	if err != nil {
-		return GatewayEvent{}, err
+		return structs.GatewayEvent{}, err
 	}
 	dataD, err := json.Marshal(event.D)
 	switch event.Op {
 	case VoiceOpcodeHello:
-		var helloData HelloEventData
+		var helloData structs.HelloEventData
 		err = json.Unmarshal(dataD, &helloData)
 		if err != nil {
-			return GatewayEvent{}, err
+			return structs.GatewayEvent{}, err
 		}
 		event.D = helloData
 	case VoiceOpcodeReady:
-		var readyData VoiceReady
+		var readyData structs.VoiceReady
 		err = json.Unmarshal(dataD, &readyData)
 		if err != nil {
-			return GatewayEvent{}, err
+			return structs.GatewayEvent{}, err
 		}
 		event.D = readyData
 	case VoiceOpcodeSessionDescription:
-		var sessionDescriptionData SessionDescription
+		var sessionDescriptionData structs.SessionDescription
 		err = json.Unmarshal(dataD, &sessionDescriptionData)
 		if err != nil {
-			return GatewayEvent{}, err
+			return structs.GatewayEvent{}, err
 		}
 		event.D = sessionDescriptionData
 	case VoiceOpcodeClientsConnect:
-		var clientsConnectData VoiceClientsConnect
+		var clientsConnectData structs.VoiceClientsConnect
 		err = json.Unmarshal(dataD, &clientsConnectData)
 		if err != nil {
-			return GatewayEvent{}, err
+			return structs.GatewayEvent{}, err
 		}
 		event.D = clientsConnectData
 	}
@@ -301,19 +357,22 @@ func (v *Voice) sendIPDiscovery() error {
 }
 
 func (v *Voice) sendSpeaking() error {
-	defer v.logger.Info("speaking event sent.")
-	speakingData := &Speaking{
+	speakingData := &structs.Speaking{
 		Speaking: 1,
 		Delay:    0,
 		SSRC:     v.ssrc,
 	}
-	return v.sendEvent(websocket.TextMessage, VoiceOpcodeSpeaking, speakingData)
+	if err := v.sendEvent(websocket.TextMessage, VoiceOpcodeSpeaking, speakingData); err != nil {
+		return err
+	}
+	v.log.Info("Speaking event sent.")
+	return nil
 }
 
 func (v *Voice) sendSelectProtocol(ipAddr string, port uint16) error {
-	eventData := &SelectProtocol{
+	eventData := &structs.SelectProtocol{
 		Protocol: "udp",
-		Data: SelectProtocolData{
+		Data: structs.SelectProtocolData{
 			Address: ipAddr,
 			Port:    port,
 			Mode:    "aead_aes256_gcm_rtpsize",
@@ -323,7 +382,7 @@ func (v *Voice) sendSelectProtocol(ipAddr string, port uint16) error {
 	if err != nil {
 		return err
 	}
-	v.logger.Info("select protocol event sent.")
+	v.log.Info("Select protocol event sent.")
 	return nil
 }
 

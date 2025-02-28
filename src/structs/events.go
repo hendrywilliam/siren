@@ -9,8 +9,6 @@ const (
 	EventNameVoiceStateUpdate  EventName = "VOICE_STATE_UPDATE"
 )
 
-type EventOpcode = uint8
-
 type Event struct {
 	Op EventOpcode            `json:"op"`
 	D  map[string]interface{} `json:"d,omitempty"`
@@ -18,33 +16,10 @@ type Event struct {
 	T  EventName              `json:"t,omitempty"`
 }
 
-type GatewayOpcode = uint8
-
-const (
-	GatewayOpcodeDispatch                GatewayOpcode = 0
-	GatewayOpcodeHeartbeat               GatewayOpcode = 1
-	GatewayOpcodeIdentify                GatewayOpcode = 2
-	GatewayOpcodePresenceUpdate          GatewayOpcode = 3
-	GatewayOpcodeVoiceStateUpdate        GatewayOpcode = 4
-	GatewayOpcodeResume                  GatewayOpcode = 6
-	GatewayOpcodeReconnect               GatewayOpcode = 7
-	GatewayOpcodeRequestGuildMember      GatewayOpcode = 8
-	GatewayOpcodeInvalidSession          GatewayOpcode = 9
-	GatewayOpcodeHello                   GatewayOpcode = 10
-	GatewayOpcodeHeartbeatAck            GatewayOpcode = 11
-	GatewayOpcodeRequestSoundboardSounds GatewayOpcode = 31
-)
-
 // Send events.
 type HeartbeatEvent struct {
 	Op EventOpcode `json:"op"`
 	D  uint64      `json:"d"`
-}
-
-type IdentifyEventDProperties struct {
-	Os      string `json:"os"`
-	Browser string `json:"browser"`
-	Device  string `json:"device"`
 }
 
 type ResumeEvent struct {

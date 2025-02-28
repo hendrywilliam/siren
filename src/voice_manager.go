@@ -1,6 +1,8 @@
 package src
 
-import "sync"
+import (
+	"sync"
+)
 
 type GuildID = string
 
@@ -9,13 +11,13 @@ type VoiceManager struct {
 	activeVoices map[GuildID]*Voice
 }
 
-func NewVoiceManager() *VoiceManager {
-	return &VoiceManager{
+func NewVoiceManager() VoiceManager {
+	return VoiceManager{
 		activeVoices: make(map[string]*Voice),
 	}
 }
 
-func (vm *VoiceManager) Add(guildId GuildID, voice *Voice) {
+func (vm VoiceManager) Add(guildId GuildID, voice *Voice) {
 	if voice := vm.Get(guildId); voice != nil {
 		return
 	}
