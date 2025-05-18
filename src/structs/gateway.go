@@ -4,15 +4,6 @@ import (
 	"time"
 )
 
-type EventOpcode = uint8
-
-type GatewayEvent struct {
-	Op EventOpcode `json:"op"`
-	D  interface{} `json:"d,omitempty"`
-	S  uint64      `json:"s,omitempty"`
-	T  EventName   `json:"t,omitempty"`
-}
-
 type GatewayEventData interface{}
 
 type HelloEventData struct {

@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hendrywilliam/siren/src"
 	internalLog "github.com/hendrywilliam/siren/src"
+	"github.com/hendrywilliam/siren/src/gateway"
 	"github.com/hendrywilliam/siren/src/utils"
 	"github.com/joho/godotenv"
 )
@@ -19,13 +19,13 @@ func main() {
 		slog.Error("Failed to load configuration file.")
 		os.Exit(1)
 	}
-	cfg := utils.LoadConfiguration()
+	env := utils.LoadConfiguration()
 	var logHandler slog.Handler
 	logOpts := slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelDebug,
 	}
-	if cfg.AppEnv != "production" {
+	if env.AppEnv != "production" {
 		logHandler = internalLog.NewCustomHandler(os.Stdout, internalLog.CustomHandlerOpts{
 			SlogOpts: logOpts,
 		})
@@ -35,9 +35,11 @@ func main() {
 	logger := slog.New(logHandler)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	g := src.NewGateway(src.GatewayArguments{
-		Config: cfg,
-		Logger: logger,
+	g := gateway.NewGateway(gateway.DiscordArguments{
+		BotToken:          env.DiscordBotToken,
+		BotGatewayVersion: env.DiscordGatewayVersion,
+		BotIntent:         641,
+		Logger:            logger,
 	})
 	g.Open(ctx)
 	<-ctx.Done()

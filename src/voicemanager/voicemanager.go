@@ -1,23 +1,25 @@
-package src
+package voicemanager
 
 import (
 	"sync"
+
+	"github.com/hendrywilliam/siren/src/voice"
 )
 
 type GuildID = string
 
 type VoiceManager struct {
 	mu           sync.Mutex
-	activeVoices map[GuildID]*Voice
+	activeVoices map[GuildID]*voice.Voice
 }
 
 func NewVoiceManager() VoiceManager {
 	return VoiceManager{
-		activeVoices: make(map[string]*Voice),
+		activeVoices: make(map[string]*voice.Voice),
 	}
 }
 
-func (vm VoiceManager) Add(guildId GuildID, voice *Voice) {
+func (vm VoiceManager) Add(guildId GuildID, voice *voice.Voice) {
 	if voice := vm.Get(guildId); voice != nil {
 		return
 	}
@@ -37,7 +39,7 @@ func (vm *VoiceManager) Delete(guildID GuildID) {
 	return
 }
 
-func (vm *VoiceManager) Get(guildID GuildID) *Voice {
+func (vm *VoiceManager) Get(guildID GuildID) *voice.Voice {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 	return vm.activeVoices[guildID]

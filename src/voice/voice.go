@@ -1,4 +1,4 @@
-package src
+package voice
 
 import (
 	"context"
@@ -24,7 +24,7 @@ const (
 	VoiceGatewayStatusWaitingToIdentify VoiceGatewayStatus = "WAITING_TO_IDENTIFY"
 )
 
-type VoiceOpcode = uint8
+type VoiceOpcode = int
 
 const (
 	VoiceOpcodeIdentify           VoiceOpcode = 0
@@ -262,7 +262,7 @@ func (v *Voice) getLocalTime() time.Time {
 }
 
 func (v *Voice) sendEvent(messageType int, op structs.EventOpcode, d structs.GatewayEventData) error {
-	data, err := json.Marshal(structs.GatewayEvent{
+	data, err := json.Marshal(structs.Event{
 		Op: op,
 		D:  d,
 	})
@@ -286,11 +286,11 @@ func (v *Voice) parseError(err error) {
 	// // websocket internal errors
 }
 
-func (v *Voice) parseEvent(data []byte) (structs.GatewayEvent, error) {
-	var event structs.GatewayEvent
+func (v *Voice) parseEvent(data []byte) (structs.Event, error) {
+	var event structs.Event
 	err := json.Unmarshal(data, &event)
 	if err != nil {
-		return structs.GatewayEvent{}, err
+		return structs.Event{}, err
 	}
 	dataD, err := json.Marshal(event.D)
 	switch event.Op {
@@ -298,28 +298,28 @@ func (v *Voice) parseEvent(data []byte) (structs.GatewayEvent, error) {
 		var helloData structs.HelloEventData
 		err = json.Unmarshal(dataD, &helloData)
 		if err != nil {
-			return structs.GatewayEvent{}, err
+			return structs.Event{}, err
 		}
 		event.D = helloData
 	case VoiceOpcodeReady:
 		var readyData structs.VoiceReady
 		err = json.Unmarshal(dataD, &readyData)
 		if err != nil {
-			return structs.GatewayEvent{}, err
+			return structs.Event{}, err
 		}
 		event.D = readyData
 	case VoiceOpcodeSessionDescription:
 		var sessionDescriptionData structs.SessionDescription
 		err = json.Unmarshal(dataD, &sessionDescriptionData)
 		if err != nil {
-			return structs.GatewayEvent{}, err
+			return structs.Event{}, err
 		}
 		event.D = sessionDescriptionData
 	case VoiceOpcodeClientsConnect:
 		var clientsConnectData structs.VoiceClientsConnect
 		err = json.Unmarshal(dataD, &clientsConnectData)
 		if err != nil {
-			return structs.GatewayEvent{}, err
+			return structs.Event{}, err
 		}
 		event.D = clientsConnectData
 	}
