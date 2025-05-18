@@ -36,10 +36,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	g := gateway.NewGateway(gateway.DiscordArguments{
-		BotToken:          env.DiscordBotToken,
-		BotGatewayVersion: env.DiscordGatewayVersion,
-		BotIntent:         641,
-		Logger:            logger,
+		BotToken:  env.DiscordBotToken,
+		BotIntent: 641,
+		Logger:    logger,
 	})
 	g.Open(ctx)
 	<-ctx.Done()

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -72,7 +73,7 @@ type Gateway struct {
 	wsDialer                 *websocket.Dialer
 	lastHeartbeatAcknowledge time.Time // local time.
 	lastHeartbeatSent        time.Time // local time.
-	sequence                 uint
+	sequence                 atomic.Uint64
 	httpClient               *http.Client
 	ctx                      context.Context
 	heartbeatTicker          *time.Ticker
@@ -81,7 +82,7 @@ type Gateway struct {
 
 	botToken       string
 	botIntents     uint
-	botVersion     string
+	botVersion     uint
 	discordBaseURL string
 
 	voiceManager voicemanager.VoiceManager
@@ -89,9 +90,8 @@ type Gateway struct {
 }
 
 type DiscordArguments struct {
-	BotToken          string
-	BotGatewayVersion string
-	BotIntent         uint
+	BotToken  string
+	BotIntent uint
 
 	Logger *slog.Logger
 }
@@ -109,7 +109,7 @@ func NewGateway(args DiscordArguments) *Gateway {
 		wsurl:          u.String(),
 		botToken:       args.BotToken,
 		botIntents:     args.BotIntent,
-		botVersion:     args.BotGatewayVersion,
+		botVersion:     10,
 		status:         StatusDisconnected,
 		discordBaseURL: "https://discord.com/api/",
 		voiceManager:   voicemanager.NewVoiceManager(),
@@ -233,24 +233,61 @@ func (g *Gateway) acceptEvent(messageType int, rawMessage []byte) (*structs.Even
 
 	switch e.Op {
 	case OpcodeHeartbeat:
+		sequence := g.sequence.Load()
+		g.log.Info("sequence")
 		heartbeatEvent := structs.Event{
 			Op: OpcodeHeartbeat,
-			D:  g.getLastNonce(),
+			D:  sequence,
 		}
 		data, _ := json.Marshal(heartbeatEvent)
 		g.sendEvent(websocket.BinaryMessage, data)
-	case OpcodeDispatch:
-		g.log.Info("event", "incoming data", e.D)
 	case OpcodeHeartbeatAck:
 		g.log.Info("event", "heartbeat_acknowledge", e)
 	case OpcodeReconnect:
-
+		g.status = StatusDisconnected
+		g.reconnect()
+	case OpcodeDispatch:
+		g.sequence.Store(e.S)
+		g.log.Info("event", "dispatch_event", e)
 	}
 	return &e, nil
 }
 
-func (g *Gateway) reconnect() {
+func (g *Gateway) reconnect() error {
+	var err error
+	rurl, err := url.Parse(g.resumeGatewayURL)
+	if err != nil {
+		return err
+	}
+	resumeUrl := url.URL{
+		Scheme:   rurl.Scheme,
+		Host:     rurl.Host,
+		RawQuery: fmt.Sprintf("v=%v&encoding=json", g.botVersion),
+	}
+	g.wsConn, _, err = g.wsDialer.DialContext(g.ctx, resumeUrl.String(), nil)
+	if err != nil {
+		return err
+	}
 
+	seq := g.sequence.Load()
+	resumeEvent := &structs.Event{
+		Op: OpcodeResume,
+		D: &structs.ResumeEvent{
+			Token:     g.botToken,
+			SessionID: g.sessionID,
+			Seq:       seq,
+		},
+	}
+	data, err := json.Marshal(resumeEvent)
+	if err != nil {
+		return err
+	}
+	err = g.sendEvent(websocket.BinaryMessage, data)
+	if err != nil {
+		return err
+	}
+	go g.listen(g.wsConn)
+	return nil
 }
 
 func (g *Gateway) listen(conn *websocket.Conn) {
@@ -288,9 +325,10 @@ func (g *Gateway) heartbeating(dur time.Duration) {
 			g.log.Info("gateway heartbeating process stopped")
 			return
 		case <-g.heartbeatTicker.C:
+			sequence := g.sequence.Load()
 			data, err := json.Marshal(structs.Event{
 				Op: OpcodeHeartbeat,
-				D:  g.getLastNonce(),
+				D:  sequence,
 			})
 			if err != nil {
 				g.log.Error("failed to send heartbeat event")

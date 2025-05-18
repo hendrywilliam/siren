@@ -15,9 +15,12 @@ const (
 	EventNameVoiceStateUpdate  EventName = "VOICE_STATE_UPDATE"
 )
 
+// All events are encapsulated in RawEvent/Event.
+// RawEvent has RawMessage field to delay computation.
+// Suitable for any event with "Dispatch" opcode.
 type RawEvent struct {
 	Op     EventOpcode     `json:"op"`
-	D      json.RawMessage `json:"d,omitempty"` // RawMessage to delay computation.
+	D      json.RawMessage `json:"d,omitempty"`
 	S      uint64          `json:"s,omitempty"`
 	T      EventName       `json:"t,omitempty"`
 	Struct any             // Actual D struct.
@@ -74,7 +77,6 @@ type HelloEvent struct {
 	HeartbeatInterval uint `json:"heartbeat_interval"`
 }
 
-// Send events.
 type HeartbeatEvent struct {
 	Op EventOpcode `json:"op"`
 	D  uint64      `json:"d"`
