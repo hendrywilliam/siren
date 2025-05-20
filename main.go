@@ -36,9 +36,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	g := gateway.NewGateway(gateway.DiscordArguments{
-		BotToken:  env.DiscordBotToken,
-		BotIntent: 641,
-		Logger:    logger,
+		BotToken: env.DiscordBotToken,
+		BotIntent: []gateway.GatewayIntent{
+			gateway.GuildsIntent,
+			gateway.GuildVoiceStatesIntent,
+			gateway.GuildMessagesIntent,
+			gateway.MessageContentIntent,
+		},
+		Logger: logger,
 	})
 	g.Open(ctx)
 	<-ctx.Done()
