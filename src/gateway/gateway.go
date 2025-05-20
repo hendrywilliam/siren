@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hendrywilliam/siren/src/interactions"
+	message "github.com/hendrywilliam/siren/src/messages"
 	"github.com/hendrywilliam/siren/src/rest"
 	"github.com/hendrywilliam/siren/src/structs"
 	"github.com/hendrywilliam/siren/src/voicemanager"
@@ -117,6 +118,7 @@ type Gateway struct {
 	voiceManager voicemanager.VoiceManager
 	rest         *rest.REST
 	interaction  *interactions.InteractionAPI
+	message      *message.MessageAPI
 	log          *slog.Logger
 }
 
@@ -147,8 +149,9 @@ func NewGateway(args DiscordArguments) *Gateway {
 	}
 
 	// APIs
-	restAPI := rest.NewREST(args.BotToken)
-	interactionAPI := interactions.NewInteractionAPI(httpBaseURL.String(), restAPI)
+	restAPI := rest.NewREST(httpBaseURL.String(), args.BotToken)
+	interactionAPI := interactions.New(restAPI)
+	messageAPI := message.New(restAPI)
 
 	return &Gateway{
 		wsDialer:           websocket.DefaultDialer,
@@ -162,6 +165,7 @@ func NewGateway(args DiscordArguments) *Gateway {
 		log:                args.Logger,
 		rest:               restAPI,
 		interaction:        interactionAPI,
+		message:            messageAPI,
 	}
 }
 
@@ -307,11 +311,22 @@ func (g *Gateway) onEvent(e structs.RawEvent) error {
 	g.sequence.Store(e.S)
 	switch e.T {
 	case "MESSAGE_CREATE":
-		messageEvent := structs.MessageEvent{}
+		messageEvent := structs.Message{}
 		if err := json.Unmarshal(e.D, &messageEvent); err != nil {
 			return err
 		}
 		g.log.Info("event", "message_created", messageEvent)
+
+		// Create message
+		msg, err := g.message.CreateMessage(g.ctx, messageEvent.ChannelID, message.CreateMessageOptions{
+			Data: message.CreateMessageData{
+				Content: fmt.Sprintf("hello, %s", messageEvent.Author.Mention()),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		g.log.Info("message", "create_message", msg)
 	case "INTERACTION_CREATE":
 		g.log.Info("event", "interaction_created", e)
 		interactionEvent := structs.Interaction{}
@@ -319,11 +334,12 @@ func (g *Gateway) onEvent(e structs.RawEvent) error {
 			return err
 		}
 		g.log.Info("event", "interaction_create", interactionEvent)
-		res, err := g.interaction.Reply(g.ctx, interactionEvent.ID, interactionEvent.Token, interactions.CreateInteractionResponse{
+
+		_, err := g.interaction.Reply(g.ctx, interactionEvent.ID, interactionEvent.Token, interactions.CreateInteractionResponseOptions{
 			InteractionResponse: &structs.InteractionResponse{
 				Type: structs.InteractionResponseTypeChannelMessageWithSource,
 				Data: structs.InteractionResponseDataMessage{
-					Content: "hello world",
+					Content: fmt.Sprintf("hello %s", interactionEvent.Member.User.Mention()),
 				},
 			},
 			WithResponse: false,
@@ -331,12 +347,6 @@ func (g *Gateway) onEvent(e structs.RawEvent) error {
 		if err != nil {
 			return err
 		}
-		g.log.Info(res.Status)
-		res, err = g.interaction.DeleteOriginal(g.ctx, interactionEvent.ApplicationID, interactionEvent.Token)
-		if err != nil {
-			return err
-		}
-		g.log.Info(res.Status)
 	}
 	return nil
 }

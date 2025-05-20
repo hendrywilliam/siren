@@ -8,18 +8,29 @@ import (
 )
 
 type REST struct {
-	httpClient *http.Client
-	botToken   string
+	httpBaseURL string
+	httpClient  *http.Client
+	botToken    string
+}
+
+type RESTClient interface {
+	URL() string
+	Get(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error)
+	Put(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error)
+	Patch(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error)
+	Delete(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error)
+	Post(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error)
 }
 
 type RESTOptions struct {
 	Headers map[string]string
 }
 
-func NewREST(botToken string) *REST {
+func NewREST(baseURL, botToken string) *REST {
 	r := &REST{
-		httpClient: http.DefaultClient,
-		botToken:   botToken,
+		httpBaseURL: baseURL,
+		httpClient:  http.DefaultClient,
+		botToken:    botToken,
 	}
 	return r
 }
@@ -44,6 +55,10 @@ func (r *REST) makeRequest(ctx context.Context, method string, url string, body 
 		r.applyHeaders(req, options.Headers)
 	}
 	return req, nil
+}
+
+func (r *REST) URL() string {
+	return r.httpBaseURL
 }
 
 func (r *REST) Get(ctx context.Context, url string, body io.Reader, options *RESTOptions) (*http.Response, error) {

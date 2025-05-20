@@ -96,8 +96,8 @@ type Interaction struct {
 	Version                      uint                              `json:"version"`
 	Context                      InteractionContextType            `json:"context,omitempty"`
 	Guild                        interface{}                       `json:"guild,omitempty"`
-	Channel                      *Channel                          `json:"channel,omitempty"`
-	Member                       *Member                           `json:"member,omitempty"`
+	Channel                      Channel                           `json:"channel,omitempty"`
+	Member                       Member                            `json:"member,omitempty"`
 	User                         User                              `json:"user,omitempty"`
 	Message                      interface{}                       `json:"message,omitempty"`
 	AppPermissions               string                            `json:"app_permissions,omitempty"`

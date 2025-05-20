@@ -16,18 +16,17 @@ import (
 // Provide methods to interact with "Interaction" event struct.
 // Source: https://discord.com/developers/docs/interactions/receiving-and-responding
 type InteractionAPI struct {
-	httpBaseURL string
-	rest        *rest.REST
+	rest rest.RESTClient
 }
 
-func NewInteractionAPI(httpBaseURL string, rest *rest.REST) *InteractionAPI {
-	return &InteractionAPI{httpBaseURL: httpBaseURL, rest: rest}
+func New(rest rest.RESTClient) *InteractionAPI {
+	return &InteractionAPI{rest: rest}
 }
 
 // Routes
 // Sources: https://discord.com/developers/docs/interactions/receiving-and-responding
 func (i *InteractionAPI) interactionResponseCallbackRoute(interactionID string, interactionToken string, withResponse bool) (string, error) {
-	u, err := url.Parse(i.httpBaseURL)
+	u, err := url.Parse(i.rest.URL())
 	if err != nil {
 		return "", err
 	}
@@ -49,8 +48,8 @@ func (i *InteractionAPI) interactionResponseCallbackRoute(interactionID string, 
 	return cbUrl.String(), nil
 }
 
-func (i *InteractionAPI) originalInteractionRoute(applicationID string, interactionToken string, threadID string) (string, error) {
-	u, err := url.Parse(i.httpBaseURL)
+func (i *InteractionAPI) originalInteractionRoute(applicationID, interactionToken, threadID string, withComponents bool) (string, error) {
+	u, err := url.Parse(i.rest.URL())
 	if err != nil {
 		return "", err
 	}
@@ -64,21 +63,25 @@ func (i *InteractionAPI) originalInteractionRoute(applicationID string, interact
 		Host:   u.Host,
 		Path:   actualPath,
 	}
+	q := u.Query()
 	if threadID != "" {
-		q := u.Query()
 		q.Add("thread_id", threadID)
-		orgUrl.RawQuery = q.Encode()
 	}
+	if withComponents {
+		// default false
+		q.Add("with_components", "true")
+	}
+	orgUrl.RawQuery = q.Encode()
 	return orgUrl.String(), nil
 }
 
-type CreateInteractionResponse struct {
+type CreateInteractionResponseOptions struct {
 	InteractionResponse *structs.InteractionResponse
 	WithResponse        bool
 }
 
 // Methods
-func (i *InteractionAPI) Reply(ctx context.Context, interactionID string, interactionToken string, options CreateInteractionResponse) (*http.Response, error) {
+func (i *InteractionAPI) Reply(ctx context.Context, interactionID string, interactionToken string, options CreateInteractionResponseOptions) (*http.Response, error) {
 	var err error
 	cbURL, err := i.interactionResponseCallbackRoute(interactionID, interactionToken, options.WithResponse)
 	if err != nil {
@@ -97,13 +100,48 @@ func (i *InteractionAPI) Reply(ctx context.Context, interactionID string, intera
 	return res, nil
 }
 
+type EditOriginalData struct {
+	Content         string `json:"string"`
+	Flags           int32  `json:"flags"`
+	PayloadJson     string `json:"payload_json"`
+	Attachments     any    `json:"attachments"`      // unimplemented
+	Poll            any    `json:"poll"`             // unimplemented
+	Embed           any    `json:"embed"`            // unimplemented
+	AllowedMentions any    `json:"allowed_mentions"` // unimplemented
+	Components      any    `json:"components"`       // unimplemented
+	Files           any    `json:"files"`            // unimplemented
+}
+
+type EditOriginalOptions struct {
+	Data           EditOriginalData
+	ThreadID       string
+	WithComponents bool
+}
+
+func (i *InteractionAPI) EditOriginal(ctx context.Context, applicationID, interactionToken string, options EditOriginalOptions) (*http.Response, error) {
+	var err error
+	orgURL, err := i.originalInteractionRoute(applicationID, interactionToken, options.ThreadID, options.WithComponents)
+	if err != nil {
+		return nil, err
+	}
+	buf := &bytes.Buffer{}
+	if err := json.NewEncoder(buf).Encode(options.Data); err != nil {
+		return nil, err
+	}
+	res, err := i.rest.Patch(ctx, orgURL, buf, nil)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 type GetOriginalOptions struct {
 	ThreadID string
 }
 
-func (i *InteractionAPI) GetOriginal(ctx context.Context, applicationID string, interactionToken string, options GetOriginalOptions) (*http.Response, error) {
+func (i *InteractionAPI) GetOriginal(ctx context.Context, applicationID, interactionToken string, options GetOriginalOptions) (*http.Response, error) {
 	var err error
-	orgURL, err := i.originalInteractionRoute(applicationID, interactionToken, options.ThreadID)
+	orgURL, err := i.originalInteractionRoute(applicationID, interactionToken, options.ThreadID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +154,7 @@ func (i *InteractionAPI) GetOriginal(ctx context.Context, applicationID string, 
 
 func (i *InteractionAPI) DeleteOriginal(ctx context.Context, applicationID string, interactionToken string) (*http.Response, error) {
 	var err error
-	orgURL, err := i.originalInteractionRoute(applicationID, interactionToken, "")
+	orgURL, err := i.originalInteractionRoute(applicationID, interactionToken, "", false)
 	if err != nil {
 		return nil, err
 	}
