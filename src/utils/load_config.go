@@ -7,7 +7,7 @@ import (
 )
 
 type AppConfig struct {
-	DiscordAppsID              string
+	DiscordClientID            string
 	DiscordBotToken            string
 	DiscordPublicKey           string
 	DiscordOauth2Token         string
@@ -21,7 +21,7 @@ type AppConfig struct {
 func LoadConfiguration() AppConfig {
 	cfg := AppConfig{}
 	requiredEnv := map[string]*string{
-		"DC_APPLICATION_ID":        &cfg.DiscordAppsID,
+		"DC_APPLICATION_ID":        &cfg.DiscordClientID,
 		"DC_BOT_TOKEN":             &cfg.DiscordBotToken,
 		"DC_PUBLIC_KEY":            &cfg.DiscordPublicKey,
 		"DC_OAUTH2_TOKEN":          &cfg.DiscordOauth2Token,

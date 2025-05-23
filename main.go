@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+
 	err := godotenv.Load()
 	if err != nil {
 		slog.Error("Failed to load configuration file.")
@@ -36,14 +37,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	g := gateway.NewGateway(gateway.DiscordArguments{
-		BotToken: env.DiscordBotToken,
+		BotToken:   env.DiscordBotToken,
+		BotVersion: 10,
 		BotIntent: []gateway.GatewayIntent{
 			gateway.GuildsIntent,
 			gateway.GuildVoiceStatesIntent,
 			gateway.GuildMessagesIntent,
 			gateway.MessageContentIntent,
 		},
-		Logger: logger,
+		ClientID: env.DiscordClientID,
+		Logger:   logger,
 	})
 	g.Open(ctx)
 	<-ctx.Done()

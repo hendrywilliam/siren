@@ -6,19 +6,41 @@ import (
 
 // voice state
 type VoiceState struct {
-	GuildID                 string      `json:"guild_id"`
-	ChannelID               string      `json:"channel_id"`
-	UserID                  string      `json:"user_id"`
-	Member                  interface{} `json:"member,omitempty"`
-	SessionID               string      `json:"session_id"`
-	Deaf                    bool        `json:"deaf"`
-	Mute                    bool        `json:"mute"`
-	SelfDeaf                bool        `json:"self_deaf"`
-	SelfMute                bool        `json:"self_mute"`
-	SelfStream              bool        `json:"self_stream"`
-	SelfVideo               bool        `json:"self_video"`
-	Suppress                bool        `json:"suppress"`
-	RequestToSpeakTimestamp time.Time   `json:"request_to_speak_timestamp"`
+	GuildID                 string    `json:"guild_id"`
+	ChannelID               string    `json:"channel_id"`
+	UserID                  string    `json:"user_id"`
+	Member                  Member    `json:"member,omitempty"`
+	SessionID               string    `json:"session_id"`
+	Deaf                    bool      `json:"deaf"`
+	Mute                    bool      `json:"mute"`
+	SelfDeaf                bool      `json:"self_deaf"`
+	SelfMute                bool      `json:"self_mute"`
+	SelfStream              bool      `json:"self_stream"`
+	SelfVideo               bool      `json:"self_video"`
+	Suppress                bool      `json:"suppress"`
+	RequestToSpeakTimestamp time.Time `json:"request_to_speak_timestamp"`
+}
+
+type VoiceStateUpdate struct {
+	GuildID   string `json:"guild_id"`
+	ChannelID string `json:"channel_id"`
+	SelfMute  bool   `json:"self_mute"`
+	SelfDeaf  bool   `json:"self_deaf"`
+}
+
+type VoiceServerUpdate struct {
+	Token    string `json:"token"`
+	GuildID  string `json:"guild_id"`
+	Endpoint string `json:"endpoint"`
+}
+
+type VoiceHello struct {
+	HeartbeatInterval uint `json:"heartbeat_interval"`
+}
+
+type VoiceHeartbeat struct {
+	T      int64  `json:"t"`
+	SeqAck uint64 `json:"seq_ack"`
 }
 
 // identify payload
@@ -86,17 +108,12 @@ type SessionDescription struct {
 	VideoCodec          string   `json:"video_codec"`
 }
 
-type HeartbeatData struct {
-	T      int64  `json:"t"`
-	SeqAck uint64 `json:"seq_ack"` // needed in v8 or greater.
-}
-
 type ClientsConnect struct {
 	UsersID []string `json:"users_id"`
 }
 
 type Speaking struct {
-	Speaking uint   `json:"speaking"`
+	Speaking int    `json:"speaking"`
 	Delay    uint   `json:"delay"`
 	SSRC     uint32 `json:"ssrc"`
 }

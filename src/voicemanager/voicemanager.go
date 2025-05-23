@@ -19,7 +19,7 @@ func NewVoiceManager() VoiceManager {
 	}
 }
 
-func (vm VoiceManager) Add(guildId GuildID, voice *voice.Voice) {
+func (vm *VoiceManager) Add(guildId GuildID, voice *voice.Voice) {
 	if voice := vm.Get(guildId); voice != nil {
 		return
 	}

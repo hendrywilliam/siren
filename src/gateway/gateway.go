@@ -14,10 +14,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/hendrywilliam/siren/src/interactions"
-	message "github.com/hendrywilliam/siren/src/messages"
-	"github.com/hendrywilliam/siren/src/rest"
+	"github.com/hendrywilliam/siren/src/api"
 	"github.com/hendrywilliam/siren/src/structs"
+	"github.com/hendrywilliam/siren/src/voice"
 	"github.com/hendrywilliam/siren/src/voicemanager"
 )
 
@@ -95,6 +94,7 @@ var (
 	ErrGatewayIsAlreadyOpen = errors.New("gateway is already open")
 	ErrUnknown              = errors.New("unknown error")
 	ErrDisallowedIntents    = errors.New("disallowed intent. you may have tried to specify an intent that you have not enabled")
+	ErrUnrecognizedEvent    = errors.New("error unrecognized event.")
 )
 
 type Gateway struct {
@@ -112,19 +112,23 @@ type Gateway struct {
 	botToken           string
 	botIntents         int
 	botVersion         uint
+	clientID           string
 	discordHTTPBaseURL string
 
-	// APIs
 	voiceManager voicemanager.VoiceManager
-	rest         *rest.REST
-	interaction  *interactions.InteractionAPI
-	message      *message.MessageAPI
 	log          *slog.Logger
+	// APIs
+	rest        *api.REST
+	interaction *api.InteractionAPI
+	message     *api.MessageAPI
+	voice       *api.VoiceAPI
 }
 
 type DiscordArguments struct {
-	BotToken  string
-	BotIntent []int
+	BotToken   string
+	BotIntent  []int
+	BotVersion uint
+	ClientID   string
 
 	Logger *slog.Logger
 }
@@ -135,12 +139,12 @@ func NewGateway(args DiscordArguments) *Gateway {
 	wsBaseURL := url.URL{
 		Scheme:   "wss",
 		Host:     "gateway.discord.gg",
-		RawQuery: fmt.Sprintf("v=%v&encoding=json", 10),
+		RawQuery: fmt.Sprintf("v=%d&encoding=json", args.BotVersion),
 	}
 	httpBaseURL := url.URL{
 		Scheme: "https",
 		Host:   "discord.com",
-		Path:   fmt.Sprintf("api/v%v", 10),
+		Path:   fmt.Sprintf("api/v%d", args.BotVersion),
 	}
 
 	intents := 0
@@ -149,16 +153,18 @@ func NewGateway(args DiscordArguments) *Gateway {
 	}
 
 	// APIs
-	restAPI := rest.NewREST(httpBaseURL.String(), args.BotToken)
-	interactionAPI := interactions.New(restAPI)
-	messageAPI := message.New(restAPI)
+	restAPI := api.NewREST(httpBaseURL.String(), args.BotToken)
+	interactionAPI := api.NewInteractionAPI(restAPI)
+	messageAPI := api.NewMessageAPI(restAPI)
+	voiceAPI := api.NewVoiceAPI(restAPI)
 
 	return &Gateway{
+		clientID:           args.ClientID,
 		wsDialer:           websocket.DefaultDialer,
 		wsurl:              wsBaseURL.String(),
 		botToken:           args.BotToken,
 		botIntents:         intents,
-		botVersion:         10,
+		botVersion:         args.BotVersion,
 		status:             StatusDisconnected,
 		discordHTTPBaseURL: httpBaseURL.String(),
 		voiceManager:       voicemanager.NewVoiceManager(),
@@ -166,6 +172,7 @@ func NewGateway(args DiscordArguments) *Gateway {
 		rest:               restAPI,
 		interaction:        interactionAPI,
 		message:            messageAPI,
+		voice:              voiceAPI,
 	}
 }
 
@@ -221,7 +228,7 @@ func (g *Gateway) open(ctx context.Context) error {
 	if err != nil {
 		return errors.New("failed to send identify event")
 	}
-	g.log.Info("identify event sent")
+	// g.log.Info("identify event sent")
 
 	e := &structs.RawEvent{}
 	err = g.wsConn.ReadJSON(e)
@@ -249,11 +256,9 @@ func (g *Gateway) open(ctx context.Context) error {
 	}
 
 	if e.T == StatusReady {
-		g.log.Info("gateway is ready")
 		g.status = StatusReady
 		g.resumeGatewayURL = readyEvent.ResumeGatewayURL
 		g.sessionID = readyEvent.SessionID
-		g.log.Info("event", "ready_event", readyEvent)
 		go g.listen(g.wsConn)
 	}
 	return nil
@@ -277,14 +282,18 @@ func (g *Gateway) retry(fn func() error, max int) error {
 	return errors.New("failed after several attempts")
 }
 
+func (g *Gateway) isSelf(id string) bool {
+	return id == g.clientID
+}
+
 func (g *Gateway) acceptEvent(messageType int, rawMessage []byte) (*structs.RawEvent, error) {
 	var err error
 	reader := bytes.NewBuffer(rawMessage)
 
-	var e structs.RawEvent
+	e := &structs.RawEvent{}
 	decoder := json.NewDecoder(reader)
 	if err = decoder.Decode(&e); err != nil {
-		return &e, err
+		return e, err
 	}
 
 	switch e.Op {
@@ -296,15 +305,26 @@ func (g *Gateway) acceptEvent(messageType int, rawMessage []byte) (*structs.RawE
 		}
 		data, _ := json.Marshal(heartbeatEvent)
 		g.sendEvent(websocket.BinaryMessage, data)
+		return e, nil
 	case OpcodeHeartbeatAck:
 		g.log.Info("event", "heartbeat_acknowledge", e)
+		return e, nil
 	case OpcodeReconnect:
 		g.status = StatusDisconnected
-		g.reconnect()
+		err := g.reconnect()
+		if err != nil {
+			return nil, err
+		}
+		return e, nil
 	case OpcodeDispatch:
-		g.onEvent(e)
+		err := g.onEvent(*e)
+		if err != nil {
+			return nil, err
+		}
+		return e, nil
+	default:
+		return nil, ErrUnrecognizedEvent
 	}
-	return &e, nil
 }
 
 func (g *Gateway) onEvent(e structs.RawEvent) error {
@@ -315,31 +335,52 @@ func (g *Gateway) onEvent(e structs.RawEvent) error {
 		if err := json.Unmarshal(e.D, &messageEvent); err != nil {
 			return err
 		}
-		g.log.Info("event", "message_created", messageEvent)
+		if g.isSelf(messageEvent.Author.ID) {
+			return nil
+		}
 
 		// Create message
-		msg, err := g.message.CreateMessage(g.ctx, messageEvent.ChannelID, message.CreateMessageOptions{
-			Data: message.CreateMessageData{
+		_, err := g.message.CreateMessage(g.ctx, messageEvent.ChannelID, api.CreateMessageOptions{
+			Data: api.CreateMessageData{
 				Content: fmt.Sprintf("hello, %s", messageEvent.Author.Mention()),
 			},
 		})
 		if err != nil {
 			return err
 		}
-		g.log.Info("message", "create_message", msg)
 	case "INTERACTION_CREATE":
-		g.log.Info("event", "interaction_created", e)
 		interactionEvent := structs.Interaction{}
 		if err := json.Unmarshal(e.D, &interactionEvent); err != nil {
 			return err
 		}
-		g.log.Info("event", "interaction_create", interactionEvent)
+		// g.log.Info("event", "interaction_create", interactionEvent)
 
-		_, err := g.interaction.Reply(g.ctx, interactionEvent.ID, interactionEvent.Token, interactions.CreateInteractionResponseOptions{
+		// Check user voice state
+		userVoiceState, err := g.voice.GetUserVoiceState(g.ctx, interactionEvent.GuildID, interactionEvent.Member.User.ID)
+		if err != nil {
+			return err
+		}
+
+		// User hasn't joined to a voice channel.
+		if userVoiceState.SessionID == "" {
+			_, err := g.interaction.Reply(g.ctx, interactionEvent.ID, interactionEvent.Token, api.CreateInteractionResponseOptions{
+				InteractionResponse: &structs.InteractionResponse{
+					Type: structs.InteractionResponseTypeChannelMessageWithSource,
+					Data: structs.InteractionResponseDataMessage{
+						Content: fmt.Sprintf("%s, join to a voice channel first.", interactionEvent.Member.User.Mention()),
+					},
+				},
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+		_, err = g.interaction.Reply(g.ctx, interactionEvent.ID, interactionEvent.Token, api.CreateInteractionResponseOptions{
 			InteractionResponse: &structs.InteractionResponse{
 				Type: structs.InteractionResponseTypeChannelMessageWithSource,
 				Data: structs.InteractionResponseDataMessage{
-					Content: fmt.Sprintf("hello %s", interactionEvent.Member.User.Mention()),
+					Content: fmt.Sprintf("Playing 'Sunflower' for %s", interactionEvent.Member.User.Mention()),
 				},
 			},
 			WithResponse: false,
@@ -347,7 +388,50 @@ func (g *Gateway) onEvent(e structs.RawEvent) error {
 		if err != nil {
 			return err
 		}
+
+		// Send voice state update
+		voiceStateUpdate := &structs.Event{
+			Op: OpcodeVoiceStateUpdate,
+			D: &structs.VoiceStateUpdate{
+				GuildID:   userVoiceState.GuildID,
+				ChannelID: userVoiceState.ChannelID,
+				SelfMute:  userVoiceState.SelfMute,
+				SelfDeaf:  userVoiceState.SelfDeaf,
+			},
+		}
+		// g.log.Info("event", "voice_state_update", voiceStateUpdate)
+		data, err := json.Marshal(voiceStateUpdate)
+		if err != nil {
+			return err
+		}
+		g.sendEvent(websocket.BinaryMessage, data)
+	case "VOICE_STATE_UPDATE":
+		voiceStateEvent := structs.VoiceState{}
+		if err := json.Unmarshal(e.D, &voiceStateEvent); err != nil {
+			return err
+		}
+		g.log.Info("event", "voice_state_update", voiceStateEvent)
+		// Create new voice instance
+		newVoice := voice.NewVoice(voice.NewVoiceArguments{
+			SessionID:  voiceStateEvent.SessionID,
+			ServerID:   voiceStateEvent.GuildID,
+			BotVersion: g.botVersion,
+			UserID:     voiceStateEvent.UserID,
+			Log:        g.log,
+		})
+		g.voiceManager.Add(voiceStateEvent.GuildID, newVoice)
+	case "VOICE_SERVER_UPDATE":
+		voiceUpdateEvent := structs.VoiceServerUpdate{}
+		if err := json.Unmarshal(e.D, &voiceUpdateEvent); err != nil {
+			return err
+		}
+		g.log.Info("event", "voice_server_update", voiceUpdateEvent)
+		voice := g.voiceManager.Get(voiceUpdateEvent.GuildID)
+		voice.VoiceGatewayURL = voiceUpdateEvent.Endpoint
+		voice.Token = voiceUpdateEvent.Token
+		voice.Open(g.ctx)
 	}
+
 	return nil
 }
 
@@ -414,14 +498,14 @@ func (g *Gateway) listen(conn *websocket.Conn) {
 	}
 }
 
-func (g *Gateway) heartbeating(dur time.Duration) {
+func (g *Gateway) heartbeating(dur time.Duration) error {
 	g.heartbeatTicker = time.NewTicker(dur * time.Millisecond)
 	for {
 		select {
 		case <-g.ctx.Done():
 			g.heartbeatTicker.Stop()
 			g.log.Info("gateway heartbeating process stopped")
-			return
+			return nil
 		case <-g.heartbeatTicker.C:
 			sequence := g.sequence.Load()
 			data, err := json.Marshal(structs.Event{
@@ -430,7 +514,7 @@ func (g *Gateway) heartbeating(dur time.Duration) {
 			})
 			if err != nil {
 				g.log.Error("failed to send heartbeat event")
-				continue
+				return err
 			}
 			g.sendEvent(websocket.BinaryMessage, data)
 			g.log.Info("gateway heartbeat event sent")
